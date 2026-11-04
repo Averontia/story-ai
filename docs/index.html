@@ -582,7 +582,8 @@ progress[hidden] { display: none; }
   function storySoFar(maxChars) {
     const parts = [];
     story.turns.forEach((t, i) => {
-      if (t.direction) parts.push("[Reader's direction: " + t.direction + (t.outcome ? " | What happened: " + t.outcome : "") + "]");
+      if (t.direction) parts.push(t.verdict === "refused" && t.outcome ? "[What happened: " + t.outcome + "]"
+        : "[Reader's direction: " + t.direction + (t.outcome ? " | What happened: " + t.outcome : "") + "]");
       parts.push(t.paragraphs.join("\n\n"));
     });
     let text = parts.join("\n\n");
@@ -678,6 +679,7 @@ progress[hidden] { display: none; }
       AI_CHAR_FIELDS.forEach((k) => {
         let v = k === "sex" ? normSex(e[k]) : String(e[k] == null ? "" : e[k]).trim().slice(0, 160);
         if (!v || blank.test(v)) return;
+        if (/\b(a number or|or a word like|\d+-\d+ words|under \d+ words|body, face(,| and) hair|what they (hold|carry)|health, injuries)\b/i.test(v)) return;   // the instructions echoed back
         if ((k === "outfit" || k === "looks" || k === "carrying") && looksLikePlace(v)) return;   // a field mix-up by the model
         if ((c[k] || "").toLowerCase() === v.toLowerCase()) return;
         if (k === "sex" && c.sex) return;   // once known, sex doesn't flip on a model whim
@@ -686,6 +688,22 @@ progress[hidden] { display: none; }
       });
     });
     return out;
+  }
+  // People named in the reader's opening prompt: single capitalised words that aren't part of a longer name
+  // like "Verona High School" and aren't common capitalised words.
+  const NOT_NAMES = /^(The|A|An|And|But|In|On|At|To|Of|For|With|When|While|After|Before|One|Two|Three|His|Her|Their|Its|This|That|There|They|He|She|It|We|I|You|Prom|Christmas|Halloween|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|American|British|English|French|German|Spanish|Italian|Mexican|Canadian|Chinese|Japanese|Korean|Russian|Earth|God|Mr|Mrs|Ms|Dr)$/;
+  function premiseNames() {
+    const words = (story.premise || "").replace(/[’]/g, "'").split(/\s+/);
+    const out = [];
+    words.forEach((raw, i) => {
+      const w = raw.replace(/'s$/i, "").replace(/[^A-Za-z'-]/g, "");
+      if (!/^[A-Z][a-z]{2,}$/.test(w) || NOT_NAMES.test(w)) return;
+      const cap = (x) => x && /^[A-Z]/.test(x.replace(/^["'(]/, ""));
+      if (cap(words[i - 1]) && !/[.!?,]$/.test(words[i - 1]) && !/^(Mr|Mrs|Ms|Dr)\.?$/.test(words[i - 1])) return;   // inside a multi-word name
+      if (cap(words[i + 1]) && !/[,.!?]$/.test(raw)) return;
+      if (!out.includes(w)) out.push(w);
+    });
+    return out.slice(0, 8);
   }
   function firstName(n) { return String(n || "").trim().split(/\s+/)[0] || ""; }
   function nameIn(name, text) {
@@ -775,7 +793,9 @@ progress[hidden] { display: none; }
     if (first) {
       ask = "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at an open moment. Never speak to the reader, ask questions or offer choices.";
     } else if (plan && plan.happens) {
-      ask = "THE READER'S DIRECTION: " + direction + "\n" +
+      // When the direction was refused, the writer never sees its wording: small models copy "shoot lasers"
+      // and ignore "nothing happens".
+      ask = (plan.verdict === "refused" ? "" : "THE READER'S DIRECTION: " + direction + "\n") +
         "WHAT HAPPENS BECAUSE OF IT (already decided, you must follow this): " + plan.happens + "\n\n" +
         "Continue the story from exactly where it stopped. Your FIRST paragraph must show this happening, right away. Then write what follows from it. " +
         "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at an open moment. Never speak to the reader, ask questions or offer choices.\n" +
@@ -943,6 +963,7 @@ progress[hidden] { display: none; }
       "NEWEST PART:\n" + newText.slice(-3000),
       (() => { const who = story.characters.filter((c) => nameIn(c.name, newText)).map((c) => c.name);
         const mc = mainChar(); if (mc && !who.includes(mc.name)) who.unshift(mc.name);
+        premiseNames().forEach((n) => { if (!who.some((w) => nameIn(w, n) || nameIn(n, w)) && nameIn(n, newText)) who.push(n); });
         return who.length ? "The characters list must include: " + who.join(", ") + ", plus anyone new who appears." : ""; })(),
       "Fill in the JSON. Use an empty string \"\" for anything the story doesn't say; never write words like empty, none or unknown.",
       "- title: " + (story.title ? "write exactly: " + story.title : "a short title for the story, 2-6 words."),
