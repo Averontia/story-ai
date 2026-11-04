@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: a reading column for the story with a pinned direction box, and a side desk (settings, characters, places). Ink and teal, with amber marking the reader's own words. */
+:root {
+  --bg: #eef0ec;
+  --surface: #f9faf7;
+  --raised: #ffffff;
+  --ink: #1c232d;
+  --muted: #5d6673;
+  --line: #d5d9d2;
+  --accent: #1d6a72;
+  --accent-ink: #ffffff;
+  --amber: #9a6a12;
+  --amber-bg: #f6ecd6;
+  --warn: #a5402c;
+  --font-story: "Literata", Georgia, "Times New Roman", serif;
+  --font-ui: "Manrope", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --surface: #171c24; --raised: #1e242e; --ink: #e3e6ea; --muted: #98a1ad;
+    --line: #2c3440; --accent: #5cb0b8; --accent-ink: #0d1a1c; --amber: #e0b057; --amber-bg: #2a2416; --warn: #e2836f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --surface: #171c24; --raised: #1e242e; --ink: #e3e6ea; --muted: #98a1ad;
+  --line: #2c3440; --accent: #5cb0b8; --accent-ink: #0d1a1c; --amber: #e0b057; --amber-bg: #2a2416; --warn: #e2836f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header.bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.brand { font-family: var(--font-story); font-weight: 600; font-size: 20px; letter-spacing: .01em; }
+.brand span { color: var(--accent); font-style: italic; }
+.story-title { color: var(--muted); font-size: 14px; flex: 1; min-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn { border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.on { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+.reader { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+.scroll { overflow-y: auto; padding: 28px 16px 40px; }
+.page { max-width: 680px; margin: 0 auto; }
+
+.notice { background: var(--amber-bg); color: var(--ink); border: 1px solid var(--amber); border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 18px; }
+.notice[hidden] { display: none; }
+
+/* Start screen */
+.start h1 { font-family: var(--font-story); font-weight: 600; font-size: 30px; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; }
+.start p.lede { color: var(--muted); margin: 0 0 20px; max-width: 60ch; }
+.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field label, .label { font-weight: 600; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+textarea, input[type="text"], select { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
+textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+#premise { min-height: 140px; font-family: var(--font-story); font-size: 16px; }
+.examples { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 18px; }
+.chip { border: 1px dashed var(--line); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Story text */
+.story { font-family: var(--font-story); font-size: 18px; line-height: 1.75; }
+.story p { margin: 0 0 1.1em; }
+.story p.reading { background: var(--amber-bg); border-radius: 4px; box-shadow: 0 0 0 6px var(--amber-bg); }
+.story .premise-card { font-family: var(--font-ui); font-size: 14px; color: var(--muted); border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin-bottom: 28px; white-space: pre-wrap; }
+.story .premise-card b { color: var(--ink); display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.direction { font-family: var(--font-ui); font-size: 14px; margin: 6px 0 22px; padding: 8px 12px; border-radius: 8px; background: var(--amber-bg); color: var(--ink); border-left: 3px solid var(--amber); }
+.direction .who { font-weight: 700; color: var(--amber); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+.verdict { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+.verdict .pill { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; border-radius: 999px; padding: 1px 7px; margin-right: 6px; border: 1px solid currentColor; }
+.verdict .pill.accepted { color: var(--accent); }
+.verdict .pill.adjusted { color: var(--amber); }
+.verdict .pill.refused { color: var(--warn); }
+.thinking { color: var(--muted); font-style: italic; }
+.turn-break { border: 0; border-top: 1px solid var(--line); margin: 8px auto 22px; width: 40px; }
+
+/* Composer */
+.composer { border-top: 1px solid var(--line); background: var(--surface); padding: 12px 16px; }
+.composer .page { display: grid; gap: 8px; }
+.composer textarea { min-height: 56px; max-height: 180px; }
+.composer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.composer-row .spacer { flex: 1; }
+.hint { color: var(--muted); font-size: 13px; }
+.err { color: var(--warn); font-size: 13px; }
+
+/* Side desk */
+aside.desk { border-left: 1px solid var(--line); background: var(--surface); overflow-y: auto; padding: 16px; display: grid; align-content: start; gap: 22px; }
+.section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.slider-row { display: grid; gap: 4px; margin-bottom: 14px; }
+.slider-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; font-size: 14px; }
+.slider-head output { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.realism-desc { font-size: 13px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.realism-desc b { color: var(--ink); }
+
+.entries { display: grid; gap: 8px; }
+.entry { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; }
+.entry.fresh { border-color: var(--accent); }
+.entry-head { display: flex; gap: 6px; align-items: center; }
+.entry input { border: 0; background: transparent; padding: 2px 0; font-weight: 700; font-size: 14px; width: 100%; }
+.entry textarea { border: 0; background: transparent; padding: 0; min-height: 40px; font-size: 13px; color: var(--muted); resize: vertical; }
+.entry input:focus, .entry textarea:focus { outline: none; }
+.entry:focus-within { border-color: var(--accent); }
+.x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.x:hover { color: var(--warn); }
+.empty { color: var(--muted); font-size: 13px; font-style: italic; }
+
+.voice-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+
+/* Dialog */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(10, 14, 20, .45); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.dialog-backdrop[hidden] { display: none; }
+.dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; width: min(520px, 100%); max-height: 80vh; overflow-y: auto; padding: 18px; display: grid; gap: 12px; }
+.dialog h3 { margin: 0; font-family: var(--font-story); font-size: 20px; }
+.saved-list { display: grid; gap: 8px; }
+.saved { display: flex; gap: 10px; align-items: center; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.saved .meta { flex: 1; min-width: 0; }
+.saved .meta b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved .meta span { color: var(--muted); font-size: 12px; }
+.saved.current { border-color: var(--accent); }
+
+.tabs { display: none; }
+
+@media (max-width: 880px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .tabs { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .tabs .btn { flex: 1; }
+  aside.desk { border-left: 0; display: none; }
+  .main.show-desk aside.desk { display: grid; }
+  .main.show-desk .reader { display: none; }
+  .story { font-size: 17px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .entry.fresh { transition: border-color 1.5s; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">Story <span>AI</span></div>
+    <div class="story-title" id="storyTitle">New story</div>
+    <div class="bar-actions">
+      <button class="btn small" id="voiceToggle" type="button" aria-pressed="false">Voice: off</button>
+      <button class="btn small" id="copyBtn" type="button">Copy story</button>
+      <button class="btn small" id="savedBtn" type="button">My stories</button>
+      <button class="btn small" id="newBtn" type="button">New story</button>
+    </div>
+  </header>
+
+  <div class="main" id="main">
+    <div class="tabs" role="tablist">
+      <button class="btn small" id="tabStory" type="button">Story</button>
+      <button class="btn small" id="tabDesk" type="button">Settings &amp; characters</button>
+    </div>
+
+    <section class="reader">
+      <div class="scroll" id="scroll">
+        <div class="page">
+          <div class="notice" id="noClaude" hidden>
+            This page writes with Claude, which only works when it's opened from its claude.ai link. Here you can look around, but the writing buttons won't do anything.
+          </div>
+
+          <div class="start" id="startView">
+            <h1>What's the story about?</h1>
+            <p class="lede">Describe the setup: who it's about, where it happens, the kind of story. This sets the rules of the world, so what counts as "realistic" is judged against it.</p>
+            <div class="field">
+              <label for="premise">Your prompt</label>
+              <textarea id="premise" placeholder="A tired night-shift nurse in a small mountain town notices that the same patient has been admitted three nights in a row, but nobody else remembers him."></textarea>
+            </div>
+            <div class="examples" id="examples">
+              <button class="chip" type="button">Realistic survival: lost hiking alone in the Rockies</button>
+              <button class="chip" type="button">Fantasy: a blacksmith's apprentice finds a talking sword</button>
+              <button class="chip" type="button">Mystery: a 1920s jazz club murder</button>
+              <button class="chip" type="button">Sci-fi: the last mechanic on a failing space station</button>
+            </div>
+            <div class="field">
+              <label for="style">Style notes (optional)</label>
+              <input type="text" id="style" placeholder="e.g. first person, present tense, dark humour, for adults">
+            </div>
+            <div class="composer-row">
+              <button class="btn primary" id="beginBtn" type="button">Write the opening</button>
+              <span class="hint" id="beginHint">Writes 3 paragraphs, then waits for you.</span>
+            </div>
+            <div class="err" id="beginErr"></div>
+          </div>
+
+          <div class="story" id="storyView" hidden></div>
+        </div>
+      </div>
+
+      <div class="composer" id="composer" hidden>
+        <div class="page">
+          <label class="label" for="direction">What happens next? (or what you do)</label>
+          <textarea id="direction" placeholder="I pick up the large rock and throw it at the door."></textarea>
+          <div class="composer-row">
+            <button class="btn primary" id="continueBtn" type="button">Continue</button>
+            <button class="btn" id="stopBtn" type="button" hidden>Stop</button>
+            <button class="btn ghost" id="undoBtn" type="button">Undo last part</button>
+            <button class="btn ghost" id="redoBtn" type="button">Rewrite last part</button>
+            <span class="spacer"></span>
+            <span class="hint" id="contHint"></span>
+          </div>
+          <div class="err" id="contErr"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="desk" id="desk">
+      <div class="section">
+        <h2>How it writes</h2>
+        <div class="slider-row">
+          <div class="slider-head"><label for="paras">Paragraphs per turn</label><output id="parasOut">3</output></div>
+          <input type="range" id="paras" min="1" max="10" step="1" value="3">
+          <div class="scale"><span>1</span><span>10</span></div>
+        </div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="realism">Realism</label><output id="realismOut">60</output></div>
+          <input type="range" id="realism" min="0" max="100" step="5" value="60">
+          <div class="scale"><span>0 · anything goes</span><span>100 · strict</span></div>
+        </div>
+        <div class="realism-desc" id="realismDesc"></div>
+      </div>
+
+      <div class="section">
+        <h2>Read aloud</h2>
+        <div class="voice-row">
+          <select id="voiceSel" aria-label="Voice"></select>
+        </div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="rate">Speed</label><output id="rateOut">1.0×</output></div>
+          <input type="range" id="rate" min="0.6" max="1.5" step="0.05" value="1">
+        </div>
+        <div class="composer-row">
+          <button class="btn small" id="readAllBtn" type="button">Read whole story</button>
+          <button class="btn small" id="readStopBtn" type="button">Stop reading</button>
+        </div>
+        <p class="hint" id="voiceHint"></p>
+      </div>
+
+      <div class="section">
+        <h2>Characters <button class="btn small ghost" id="addChar" type="button">+ Add</button></h2>
+        <div class="entries" id="chars"></div>
+      </div>
+
+      <div class="section">
+        <h2>Places <button class="btn small ghost" id="addPlace" type="button">+ Add</button></h2>
+        <div class="entries" id="places"></div>
+      </div>
+      <p class="hint">Claude updates these after every part. You can edit them, and your changes become fact in the story.</p>
+    </aside>
+  </div>
+</div>
+
+<div class="dialog-backdrop" id="savedDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="savedTitle">
+    <h3 id="savedTitle">My stories</h3>
+    <div class="hint" id="savedWhere"></div>
+    <div class="saved-list" id="savedList"></div>
+    <div class="composer-row"><span class="spacer"></span><button class="btn" id="savedClose" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" id="confirmDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirmText">
+    <h3 id="confirmText">Are you sure?</h3>
+    <div class="composer-row"><span class="spacer"></span>
+      <button class="btn" id="confirmNo" type="button">Cancel</button>
+      <button class="btn primary" id="confirmYes" type="button">Yes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const NOTES = "@@NOTES@@";
+  const LS_KEY = "storyai.stories.v1";
+  const LS_PREFS = "storyai.prefs.v1";
+
+  // ---------- state ----------
+  let story = blankStory();
+  let sample = null;          // Claude
+  let db = null, uid = null;  // saved stories
+  let busy = null;            // AbortController while writing
+  let prefs = loadPrefs();
+
+  function blankStory() {
+    return { id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: "", premise: "", style: "", turns: [], characters: [], places: [], updated: Date.now() };
+  }
+  function safeLS(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  function loadPrefs() {
+    return Object.assign({ paras: 3, realism: 60, voice: false, voiceName: "", rate: 1 },
+      safeLS(() => JSON.parse(localStorage.getItem(LS_PREFS)) || {}, {}));
+  }
+  function savePrefs() { safeLS(() => localStorage.setItem(LS_PREFS, JSON.stringify(prefs))); }
+
+  // ---------- realism ----------
+  const BANDS = [
+    { max: 10, name: "Anything goes", reader: "Whatever you write happens, exactly as you say it. \"I can fly now\" means you fly.",
+      rule: "Treat everything the reader writes as true the moment they write it, even if it breaks the world's rules or physics (suddenly flying, shooting lasers from their eyes, a door that wasn't there). Never refuse or water it down; make it happen vividly and carry on." },
+    { max: 35, name: "Loose", reader: "Wild ideas mostly work, but the story finds some reason or cost for them.",
+      rule: "Mostly accept the reader's direction, including unlikely or impossible things, but give strange events a cost, a side effect, or an in-world explanation so the story still hangs together." },
+    { max: 65, name: "Bendable", reader: "Things that fit the world work. Impossible ones become attempts that half-work or go wrong in an interesting way.",
+      rule: "Accept directions that are plausible in this world. Anything that breaks the world's established rules becomes an attempt that partly succeeds, fails, or backfires in an interesting way. The reader may add small convenient details only if they fit what is already established." },
+    { max: 90, name: "Realistic", reader: "Your directions are attempts. The world's rules, the character's body, skills and gear decide what actually happens.",
+      rule: "Treat the reader's direction as what the character TRIES to do, not as the outcome. Decide the outcome by the world's rules, physics, the character's strength, skills, injuries, tiredness and equipment, and facts already established. The reader cannot invent new facts about the world (an item that was never there, a skill never shown); such claims turn out false or don't help." },
+    { max: 100, name: "Strict realism", reader: "Every action is an attempt with real effort, weight, fatigue and consequences. \"I pick up the large rock\" might mean straining to lift it an inch.",
+      rule: "Be strictly realistic. The reader's direction is only an attempt. Show real effort, weight, time, pain, fatigue, fear and consequences. A normal person straining against something heavy barely manages it or fails; injuries last; strangers react like real people; luck is rare. The reader cannot add facts about the world or the character's abilities that were not established. Never let the character do something their body, skills or situation would not allow." }
+  ];
+  function band(r) { return BANDS.find((b) => r <= b.max) || BANDS[BANDS.length - 1]; }
+  function renderRealism() {
+    const r = prefs.realism, b = band(r);
+    $("realismOut").textContent = r;
+    $("realismDesc").innerHTML = "";
+    const strong = document.createElement("b"); strong.textContent = b.name + ". ";
+    $("realismDesc").append(strong, document.createTextNode(b.reader));
+  }
+
+  // ---------- prompt ----------
+  function storySoFar() {
+    const parts = [];
+    story.turns.forEach((t, i) => {
+      if (t.direction) parts.push("[Reader's direction: " + t.direction + "]");
+      parts.push(t.paragraphs.join("\n\n"));
+    });
+    let text = parts.join("\n\n");
+    const MAX = 90000;
+    if (text.length > MAX) text = "[...earlier parts cut for length; the story bible holds the key facts...]\n\n" + text.slice(-MAX);
+    return text;
+  }
+  function bibleText(list) {
+    if (!list.length) return "(none yet)";
+    return list.map((e) => "- " + e.name + ": " + (e.details || "")).join("\n");
+  }
+  function buildPrompt(direction) {
+    const n = prefs.paras, r = prefs.realism, b = band(r);
+    const first = story.turns.length === 0;
+    return [
+      "You are the narrator of an interactive story. The reader sets up the story, then steers it between parts. Write vivid, well-paced prose that a reader enjoys hearing read aloud.",
+      "",
+      "STORY PREMISE (set by the reader at the start; it defines what is normal and possible in this world):",
+      story.premise,
+      story.style ? "\nSTYLE NOTES FROM THE READER: " + story.style : "",
+      "",
+      "STORY BIBLE (established facts; stay consistent with them and never contradict them):",
+      "Characters:", bibleText(story.characters),
+      "Places:", bibleText(story.places),
+      "",
+      first ? "This is the opening. Introduce the main character(s) and setting from the premise." : "STORY SO FAR:\n" + storySoFar(),
+      "",
+      first ? "" : "READER'S DIRECTION FOR THIS PART: " + (direction ? direction : "(none; continue the story naturally from where it left off)"),
+      "",
+      "REALISM SETTING: " + r + " out of 100 (" + b.name + ").",
+      first ? "The premise itself is always accepted as written." : "How to handle the reader's direction at this setting: " + b.rule,
+      "Judge realism against the world of the premise: in a fantasy world with magic, magic is realistic; in an ordinary modern world, it is not.",
+      "",
+      "LENGTH: write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + " of story prose. Stop at a natural pause where the reader can decide what happens next. Do not ask the reader questions and do not list options.",
+      "",
+      "OUTPUT FORMAT (follow exactly):",
+      "1. The " + n + " paragraph" + (n === 1 ? "" : "s") + ", separated by one blank line. Plain prose only: no title, no headings, no markdown, no notes.",
+      "2. Then a line containing only " + NOTES,
+      "3. Then one JSON object, nothing after it:",
+      '{"title": "short story title", "verdict": "accepted" | "adjusted" | "refused" | "none", "verdict_note": "one short plain sentence telling the reader how the realism setting changed their direction, or empty if it happened as asked", "characters": [{"name": "...", "details": "..."}], "places": [{"name": "...", "details": "..."}]}',
+      'verdict: "none" if there was no direction or this is the opening; "accepted" if it happened as the reader asked; "adjusted" if it happened only partly or differently; "refused" if it failed or could not happen.',
+      "characters and places: the FULL updated lists. Keep every existing entry (same names), update details that changed, add anyone or anywhere new that matters. Details are short factual notes: appearance, age, role, relationships, what they carry, injuries or condition, what they know, and where they are now. For places: what it looks like, who is there, what has happened there."
+    ].join("\n");
+  }
+
+  function splitOutput(text) {
+    const i = text.indexOf(NOTES);
+    if (i < 0) {
+      // hide a half-written marker while streaming
+      const tail = text.lastIndexOf("@@");
+      return { prose: tail > -1 && text.length - tail < NOTES.length ? text.slice(0, tail) : text, notes: null };
+    }
+    return { prose: text.slice(0, i), notes: text.slice(i + NOTES.length) };
+  }
+  function toParas(prose) {
+    return prose.replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, " ").replace(/^#+\s*/, "").trim()).filter(Boolean);
+  }
+  function parseNotes(raw) {
+    if (!raw) return null;
+    const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    try { return JSON.parse(raw.slice(a, b + 1)); } catch (e) { return null; }
+  }
+  function mergeList(oldList, newList) {
+    if (!Array.isArray(newList)) return oldList;
+    const out = [], seen = new Set();
+    newList.forEach((e) => {
+      if (!e || !e.name) return;
+      const name = String(e.name).trim(), key = name.toLowerCase();
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      const prev = oldList.find((o) => o.name.toLowerCase() === key);
+      out.push({ name, details: String(e.details || (prev && prev.details) || "").trim(), fresh: !prev || (prev.details !== String(e.details || "").trim()) });
+    });
+    oldList.forEach((o) => { if (!seen.has(o.name.toLowerCase())) out.push({ name: o.name, details: o.details }); });
+    return out;
+  }
+
+  // ---------- writing ----------
+  async function writePart(direction) {
+    if (!sample) { showErr("Claude isn't available here. Open this page from its claude.ai link to write."); return false; }
+    const ctl = new AbortController();
+    busy = ctl;
+    setBusy(true);
+    stopSpeaking();
+    const live = document.createElement("div");
+    live.className = "live";
+    const thinking = document.createElement("p");
+    thinking.className = "thinking";
+    thinking.textContent = "Thinking about what happens next...";
+    live.append(thinking);
+    if (direction) live.prepend(directionEl({ direction }));
+    $("storyView").append(live);
+    scrollDown();
+    let lastProse = "";
+    try {
+      const res = await sample(buildPrompt(direction), {
+        signal: ctl.signal, cache: false,
+        onText: ({ text }) => {
+          const { prose } = splitOutput(text);
+          if (prose === lastProse) return;
+          lastProse = prose;
+          renderLiveParas(live, toParas(prose), direction);
+          scrollDown(true);
+        }
+      });
+      const { prose, notes } = splitOutput(res.text);
+      const paragraphs = toParas(prose);
+      if (!paragraphs.length) throw { code: "empty_completion" };
+      const meta = parseNotes(notes) || {};
+      const turn = { direction: direction || "", paragraphs,
+        verdict: ["accepted", "adjusted", "refused"].includes(meta.verdict) ? meta.verdict : "",
+        note: typeof meta.verdict_note === "string" ? meta.verdict_note.trim() : "" };
+      story.turns.push(turn);
+      if (meta.title && !story.title) story.title = String(meta.title).slice(0, 80);
+      story.characters = mergeList(story.characters, meta.characters);
+      story.places = mergeList(story.places, meta.places);
+      story.updated = Date.now();
+      live.remove();
+      renderStory();
+      renderBible();
+      persist();
+      if (res.truncated) showErr("That part got cut off early. Try fewer paragraphs.");
+      if (prefs.voice) speakTurn(story.turns.length - 1);
+      return true;
+    } catch (e) {
+      live.remove();
+      const code = e && e.code;
+      if (code === "cancelled") { renderStory(); return false; }
+      if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared") showErr("Claude isn't allowed to write on this page. Allow it when asked, or reload and try again.");
+      else if (code === "rate_limited") showErr("Too many requests for now. Wait a minute, then try again.");
+      else if (code === "refused") showErr("Claude wouldn't write that part. Try a different direction.");
+      else if (code === "session_expired") showErr("You've been signed out of Claude. Sign in again, then retry.");
+      else showErr("Something went wrong while writing. Your direction is still in the box; try again.");
+      renderStory();
+      return false;
+    } finally {
+      busy = null;
+      setBusy(false);
+    }
+  }
+  function renderLiveParas(live, paras, direction) {
+    live.innerHTML = "";
+    if (direction) live.append(directionEl({ direction }));
+    paras.forEach((p) => { const el = document.createElement("p"); el.textContent = p; live.append(el); });
+  }
+
+  function setBusy(on) {
+    ["beginBtn", "continueBtn", "undoBtn", "redoBtn", "newBtn"].forEach((id) => { $(id).disabled = on; });
+    $("stopBtn").hidden = !on;
+    $("contHint").textContent = on ? "Writing..." : hintText();
+  }
+  function hintText() { return "Next part: " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", realism " + prefs.realism; }
+  function showErr(msg) {
+    const id = story.turns.length ? "contErr" : "beginErr";
+    $(id).textContent = msg;
+  }
+  function clearErr() { $("contErr").textContent = ""; $("beginErr").textContent = ""; }
+  function scrollDown(onlyIfNear) {
+    const s = $("scroll");
+    if (onlyIfNear && s.scrollHeight - s.scrollTop - s.clientHeight > 260) return;
+    s.scrollTop = s.scrollHeight;
+  }
+
+  // ---------- rendering ----------
+  function directionEl(t) {
+    const d = document.createElement("div");
+    d.className = "direction";
+    const who = document.createElement("span"); who.className = "who"; who.textContent = "You";
+    d.append(who, document.createTextNode(t.direction));
+    if (t.verdict && t.verdict !== "accepted" || t.note) {
+      const v = document.createElement("span"); v.className = "verdict";
+      if (t.verdict) { const pill = document.createElement("span"); pill.className = "pill " + t.verdict; pill.textContent = t.verdict === "accepted" ? "happened" : t.verdict === "adjusted" ? "partly" : "didn't work"; v.append(pill); }
+      if (t.note) v.append(document.createTextNode(t.note));
+      d.append(v);
+    }
+    return d;
+  }
+  function renderStory() {
+    const started = story.turns.length > 0;
+    $("startView").hidden = started;
+    $("storyView").hidden = !started && !busy;
+    $("composer").hidden = !started;
+    $("storyTitle").textContent = story.title || (started ? "Untitled story" : "New story");
+    const v = $("storyView");
+    v.innerHTML = "";
+    if (story.premise && (started || busy)) {
+      const pc = document.createElement("div"); pc.className = "premise-card";
+      const b = document.createElement("b"); b.textContent = "Your prompt";
+      pc.append(b, document.createTextNode(story.premise));
+      v.append(pc);
+    }
+    story.turns.forEach((t, ti) => {
+      if (ti > 0 && !t.direction) { const hr = document.createElement("hr"); hr.className = "turn-break"; v.append(hr); }
+      if (t.direction) v.append(directionEl(t));
+      t.paragraphs.forEach((p, pi) => {
+        const el = document.createElement("p"); el.textContent = p; el.dataset.t = ti; el.dataset.p = pi;
+        el.title = "Double-click to read aloud from here";
+        v.append(el);
+      });
+    });
+    $("undoBtn").disabled = !!busy || story.turns.length < 2;
+    $("redoBtn").disabled = !!busy || story.turns.length < 1;
+  }
+  function renderBible() {
+    renderEntries($("chars"), story.characters, "No characters yet. They appear here as the story introduces them.");
+    renderEntries($("places"), story.places, "No places yet.");
+  }
+  function renderEntries(box, list, emptyText) {
+    box.innerHTML = "";
+    if (!list.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = emptyText; box.append(e); return; }
+    list.forEach((item, i) => {
+      const card = document.createElement("div"); card.className = "entry" + (item.fresh ? " fresh" : "");
+      const head = document.createElement("div"); head.className = "entry-head";
+      const name = document.createElement("input"); name.type = "text"; name.value = item.name; name.setAttribute("aria-label", "Name");
+      const del = document.createElement("button"); del.className = "x"; del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove " + item.name);
+      const det = document.createElement("textarea"); det.value = item.details; det.setAttribute("aria-label", "Details for " + item.name); det.rows = 2;
+      name.addEventListener("input", () => { item.name = name.value; queueSave(); });
+      det.addEventListener("input", () => { item.details = det.value; queueSave(); });
+      del.addEventListener("click", () => { list.splice(i, 1); renderBible(); queueSave(); });
+      head.append(name, del); card.append(head, det); box.append(card);
+      if (item.fresh) { delete item.fresh; setTimeout(() => card.classList.remove("fresh"), 2500); }
+    });
+  }
+  function addEntry(list) {
+    list.push({ name: "New", details: "" });
+    renderBible();
+    queueSave();
+  }
+
+  // ---------- saving ----------
+  let saveTimer = null;
+  function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 900); }
+  function cleanStory() {
+    const s = JSON.parse(JSON.stringify(story));
+    s.characters.forEach((c) => delete c.fresh); s.places.forEach((c) => delete c.fresh);
+    s.characters = s.characters.filter((c) => c.name.trim()); s.places = s.places.filter((c) => c.name.trim());
+    return s;
+  }
+  let writing = Promise.resolve();
+  function persist() {
+    if (!story.turns.length) return;
+    const s = cleanStory();
+    const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+    all[s.id] = s;
+    safeLS(() => localStorage.setItem(LS_KEY, JSON.stringify(all)));
+    if (db && uid) {
+      writing = writing.then(() => db.collection("data/users/" + uid).doc(s.id).set({ json: JSON.stringify(s), title: s.title || "Untitled story", updated: s.updated }))
+        .catch((e) => { if (e && e.code === "quota_exceeded") showErr("Your saved stories are full. Delete an old one in My stories."); });
+    }
+  }
+  async function listSaved() {
+    const map = {};
+    const local = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+    Object.values(local).forEach((s) => { map[s.id] = { id: s.id, title: s.title || "Untitled story", updated: s.updated, data: s }; });
+    if (db && uid) {
+      try {
+        const snap = await db.collection("data/users/" + uid).get();
+        snap.docs.forEach((d) => { const v = d.data(); if (!v || !v.json) return;
+          if (!map[d.id] || (v.updated || 0) >= (map[d.id].updated || 0)) map[d.id] = { id: d.id, title: v.title, updated: v.updated, json: v.json }; });
+      } catch (e) { /* fall back to this browser's copies */ }
+    }
+    return Object.values(map).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  }
+  async function openSaved() {
+    $("savedWhere").textContent = db && uid ? "Saved to your Claude account, so they follow you to other devices." : "Saved in this browser only.";
+    const list = $("savedList");
+    list.innerHTML = '<div class="empty">Loading...</div>';
+    $("savedDialog").hidden = false;
+    const items = await listSaved();
+    list.innerHTML = "";
+    if (!items.length) { list.innerHTML = '<div class="empty">No saved stories yet. Stories save themselves after each part.</div>'; return; }
+    items.forEach((it) => {
+      const row = document.createElement("div"); row.className = "saved" + (it.id === story.id ? " current" : "");
+      const meta = document.createElement("div"); meta.className = "meta";
+      const b = document.createElement("b"); b.textContent = it.title;
+      const sp = document.createElement("span"); sp.textContent = it.updated ? new Date(it.updated).toLocaleString() : "";
+      meta.append(b, sp);
+      const open = document.createElement("button"); open.className = "btn small"; open.type = "button"; open.textContent = it.id === story.id ? "Open now" : "Open";
+      const del = document.createElement("button"); del.className = "btn small ghost"; del.type = "button"; del.textContent = "Delete";
+      open.addEventListener("click", () => {
+        try { const s = it.data || JSON.parse(it.json); loadStory(s); $("savedDialog").hidden = true; } catch (e) { open.textContent = "Couldn't open"; }
+      });
+      del.addEventListener("click", async () => {
+        if (!(await confirmBox("Delete \"" + it.title + "\"? This can't be undone."))) return;
+        const local = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+        delete local[it.id]; safeLS(() => localStorage.setItem(LS_KEY, JSON.stringify(local)));
+        if (db && uid) { try { await db.collection("data/users/" + uid).doc(it.id).delete(); } catch (e) {} }
+        if (it.id === story.id) { story = blankStory(); renderAll(); }
+        openSaved();
+      });
+      row.append(meta, open, del); list.append(row);
+    });
+  }
+  function loadStory(s) {
+    stopSpeaking();
+    story = Object.assign(blankStory(), s);
+    clearErr();
+    renderAll();
+    safeLS(() => localStorage.setItem("storyai.current", story.id));
+    scrollDown();
+  }
+  function confirmBox(text) {
+    return new Promise((resolve) => {
+      $("confirmText").textContent = text;
+      $("confirmDialog").hidden = false;
+      const done = (v) => { $("confirmDialog").hidden = true; $("confirmYes").onclick = $("confirmNo").onclick = null; resolve(v); };
+      $("confirmYes").onclick = () => done(true);
+      $("confirmNo").onclick = () => done(false);
+      $("confirmYes").focus();
+    });
+  }
+
+  // ---------- voice ----------
+  const synth = window.speechSynthesis || null;
+  const FEMALE = /female|woman|zira|aria|jenny|michelle|samantha|victoria|karen|moira|tessa|fiona|serena|susan|hazel|libby|sonia|natasha|emma|ava|allison|joanna|salli|kimberly|kendra|ivy|amy|clara|elsa|ana|nancy|sara|jane|catherine|heather|linda|eva|heera|kalpana|google us english|google uk english female/i;
+  const MALE = /\bmale\b|david|mark|guy|george|daniel|alex\b|fred|ryan|james|thomas|brian|christopher|eric|roger|steffan|andrew|william|richard|ravi|rishi|aaron|arthur|oliver/i;
+  let voices = [];
+  function femaleVoices() {
+    const all = synth ? synth.getVoices() : [];
+    const en = all.filter((v) => /^en/i.test(v.lang));
+    const pool = en.length ? en : all;
+    const fem = pool.filter((v) => FEMALE.test(v.name) && !MALE.test(v.name.replace(/female/i, "")));
+    return { fem, all: pool };
+  }
+  function loadVoices() {
+    if (!synth) { $("voiceSel").innerHTML = "<option>No voices in this browser</option>"; $("voiceSel").disabled = true; $("voiceHint").textContent = "This browser can't read aloud."; return; }
+    const { fem, all } = femaleVoices();
+    voices = fem.length ? fem : all;
+    $("voiceHint").textContent = fem.length ? "" : (all.length ? "No female voice was found on this device, so all voices are listed." : "Voices are still loading...");
+    const sel = $("voiceSel");
+    sel.innerHTML = "";
+    voices.forEach((v) => { const o = document.createElement("option"); o.value = v.name; o.textContent = v.name.replace(/^Microsoft\s+/, "").replace(/\s+Online \(Natural\)/, " (natural)") + " · " + v.lang; sel.append(o); });
+    // prefer natural/online voices
+    const preferred = voices.find((v) => v.name === prefs.voiceName) || voices.find((v) => /natural|neural|online/i.test(v.name)) || voices[0];
+    if (preferred) sel.value = preferred.name;
+  }
+  function currentVoice() { return voices.find((v) => v.name === $("voiceSel").value) || null; }
+  function chunks(text) {
+    const sentences = text.match(/[^.!?…]+[.!?…]+["'”’)]*\s*|[^.!?…]+$/g) || [text];
+    const out = []; let cur = "";
+    sentences.forEach((s) => { if ((cur + s).length > 220 && cur) { out.push(cur); cur = s; } else cur += s; });
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
+  let speakToken = 0;
+  function speakFrom(ti, pi, onlyThisTurn) {
+    if (!synth) return;
+    stopSpeaking();
+    const token = ++speakToken;
+    const queue = [];
+    story.turns.forEach((t, a) => {
+      if (a < ti || (onlyThisTurn && a !== ti)) return;
+      t.paragraphs.forEach((p, b) => { if (a === ti && b < pi) return; queue.push({ t: a, p: b, text: p }); });
+    });
+    const voice = currentVoice();
+    let firstOfPara = true;
+    queue.forEach((item) => {
+      chunks(item.text).forEach((c, ci) => {
+        const u = new SpeechSynthesisUtterance(c);
+        if (voice) { u.voice = voice; u.lang = voice.lang; }
+        u.rate = prefs.rate;
+        if (ci === 0) u.onstart = () => { if (token === speakToken) markReading(item.t, item.p); };
+        synth.speak(u);
+      });
+    });
+    const end = new SpeechSynthesisUtterance(" ");
+    end.volume = 0; end.onend = () => { if (token === speakToken) markReading(-1, -1); };
+    synth.speak(end);
+  }
+  function speakTurn(ti) { speakFrom(ti, 0, true); }
+  function stopSpeaking() { if (synth) { speakToken++; synth.cancel(); } markReading(-1, -1); }
+  function markReading(t, p) {
+    document.querySelectorAll(".story p.reading").forEach((el) => el.classList.remove("reading"));
+    if (t < 0) return;
+    const el = document.querySelector('.story p[data-t="' + t + '"][data-p="' + p + '"]');
+    if (el) { el.classList.add("reading"); if (prefs.voice) el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
+  }
+  function renderVoiceToggle() {
+    $("voiceToggle").textContent = "Voice: " + (prefs.voice ? "on" : "off");
+    $("voiceToggle").classList.toggle("on", prefs.voice);
+    $("voiceToggle").setAttribute("aria-pressed", String(prefs.voice));
+  }
+
+  // ---------- wiring ----------
+  function renderAll() {
+    renderStory(); renderBible(); renderRealism();
+    $("paras").value = prefs.paras; $("parasOut").textContent = prefs.paras;
+    $("realism").value = prefs.realism;
+    $("rate").value = prefs.rate; $("rateOut").textContent = Number(prefs.rate).toFixed(2).replace(/0$/, "") + "×";
+    $("beginHint").textContent = "Writes " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", then waits for you.";
+    $("contHint").textContent = busy ? "Writing..." : hintText();
+    renderVoiceToggle();
+  }
+
+  $("paras").addEventListener("input", (e) => { prefs.paras = +e.target.value; savePrefs(); renderAll(); });
+  $("realism").addEventListener("input", (e) => { prefs.realism = +e.target.value; savePrefs(); renderRealism(); $("contHint").textContent = busy ? "Writing..." : hintText(); });
+  $("rate").addEventListener("input", (e) => { prefs.rate = +e.target.value; savePrefs(); $("rateOut").textContent = prefs.rate.toFixed(2).replace(/0$/, "") + "×"; });
+  $("voiceSel").addEventListener("change", () => { prefs.voiceName = $("voiceSel").value; savePrefs(); });
+  $("voiceToggle").addEventListener("click", () => {
+    prefs.voice = !prefs.voice; savePrefs(); renderVoiceToggle();
+    if (!prefs.voice) stopSpeaking();
+    else if (story.turns.length) speakTurn(story.turns.length - 1);
+  });
+  $("readAllBtn").addEventListener("click", () => { if (story.turns.length) speakFrom(0, 0, false); });
+  $("readStopBtn").addEventListener("click", stopSpeaking);
+  $("storyView").addEventListener("dblclick", (e) => {
+    const p = e.target.closest("p[data-t]"); if (!p) return;
+    speakFrom(+p.dataset.t, +p.dataset.p, false);
+  });
+
+  $("examples").addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    $("premise").value = c.textContent;
+    $("premise").focus();
+  });
+  $("beginBtn").addEventListener("click", async () => {
+    clearErr();
+    const premise = $("premise").value.trim();
+    if (!premise) { $("beginErr").textContent = "Type a prompt first, or tap one of the examples."; $("premise").focus(); return; }
+    story = blankStory();
+    story.premise = premise;
+    story.style = $("style").value.trim();
+    $("startView").hidden = true; $("storyView").hidden = false;
+    renderStory();
+    $("startView").hidden = true; $("storyView").hidden = false;
+    const ok = await writePart("");
+    if (!ok && !story.turns.length) { $("startView").hidden = false; $("storyView").hidden = true; }
+    safeLS(() => localStorage.setItem("storyai.current", story.id));
+  });
+  async function doContinue() {
+    if (busy) return;
+    clearErr();
+    const dir = $("direction").value.trim();
+    const ok = await writePart(dir);
+    if (ok) $("direction").value = "";
+  }
+  $("continueBtn").addEventListener("click", doContinue);
+  $("direction").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doContinue(); } });
+  $("stopBtn").addEventListener("click", () => { if (busy) busy.abort(); });
+  $("undoBtn").addEventListener("click", () => {
+    if (story.turns.length < 2) return;
+    const t = story.turns.pop();
+    if (t.direction) $("direction").value = t.direction;
+    story.updated = Date.now();
+    stopSpeaking(); renderStory(); persist();
+  });
+  $("redoBtn").addEventListener("click", async () => {
+    if (!story.turns.length || busy) return;
+    const t = story.turns.pop();
+    renderStory();
+    const ok = await writePart(t.direction);
+    if (!ok) { story.turns.push(t); renderStory(); }
+  });
+  $("newBtn").addEventListener("click", async () => {
+    if (story.turns.length && !(await confirmBox("Start a new story? This one is already saved in My stories."))) return;
+    stopSpeaking();
+    story = blankStory();
+    $("premise").value = ""; $("style").value = ""; $("direction").value = "";
+    clearErr(); renderAll();
+    safeLS(() => localStorage.removeItem("storyai.current"));
+  });
+  $("savedBtn").addEventListener("click", openSaved);
+  $("savedClose").addEventListener("click", () => { $("savedDialog").hidden = true; });
+  $("savedDialog").addEventListener("click", (e) => { if (e.target === $("savedDialog")) $("savedDialog").hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("savedDialog").hidden = true; } });
+  $("copyBtn").addEventListener("click", async () => {
+    const text = (story.title ? story.title + "\n\n" : "") + story.turns.map((t) => t.paragraphs.join("\n\n")).join("\n\n");
+    try { await navigator.clipboard.writeText(text || ""); $("copyBtn").textContent = "Copied"; }
+    catch (e) { $("copyBtn").textContent = "Copy failed"; }
+    setTimeout(() => { $("copyBtn").textContent = "Copy story"; }, 1600);
+  });
+  $("addChar").addEventListener("click", () => addEntry(story.characters));
+  $("addPlace").addEventListener("click", () => addEntry(story.places));
+  $("tabStory").addEventListener("click", () => $("main").classList.remove("show-desk"));
+  $("tabDesk").addEventListener("click", () => $("main").classList.add("show-desk"));
+
+  if (synth) { loadVoices(); synth.addEventListener ? synth.addEventListener("voiceschanged", loadVoices) : (synth.onvoiceschanged = loadVoices); }
+  else loadVoices();
+
+  // restore the story open last time, from this browser
+  const lastId = safeLS(() => localStorage.getItem("storyai.current"), null);
+  if (lastId) { const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {}); if (all[lastId]) story = Object.assign(blankStory(), all[lastId]); }
+  renderAll();
+  scrollDown();
+
+  // ---------- connect to Claude ----------
+  if (!window.claude || !window.claude.use) { $("noClaude").hidden = false; }
+  else {
+    claude.use("sample").then((s) => { sample = s; if (!s) $("noClaude").hidden = false; });
+    Promise.all([claude.use("db"), claude.use("user")]).then(async ([d, u]) => {
+      if (!d || !u) return;
+      const id = await u.id();
+      if (!id) return;
+      db = d; uid = id;
+    }).catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
