@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story AI</title>
+<meta name="theme-color" content="#1d6a72">
+<meta name="description" content="Write interactive stories with an AI that runs entirely on your device.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Story AI">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+/* Layout: a reading column for the story with a pinned direction box, and a side desk (settings, characters, places). Ink and teal, with amber marking the reader's own words. */
+:root {
+  --bg: #eef0ec;
+  --surface: #f9faf7;
+  --raised: #ffffff;
+  --ink: #1c232d;
+  --muted: #5d6673;
+  --line: #d5d9d2;
+  --accent: #1d6a72;
+  --accent-ink: #ffffff;
+  --amber: #9a6a12;
+  --amber-bg: #f6ecd6;
+  --warn: #a5402c;
+  --font-story: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --surface: #171c24; --raised: #1e242e; --ink: #e3e6ea; --muted: #98a1ad;
+    --line: #2c3440; --accent: #5cb0b8; --accent-ink: #0d1a1c; --amber: #e0b057; --amber-bg: #2a2416; --warn: #e2836f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --surface: #171c24; --raised: #1e242e; --ink: #e3e6ea; --muted: #98a1ad;
+  --line: #2c3440; --accent: #5cb0b8; --accent-ink: #0d1a1c; --amber: #e0b057; --amber-bg: #2a2416; --warn: #e2836f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header.bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.brand { font-family: var(--font-story); font-weight: 600; font-size: 20px; letter-spacing: .01em; }
+.brand span { color: var(--accent); font-style: italic; }
+.story-title { color: var(--muted); font-size: 14px; flex: 1; min-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn { border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.on { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+.reader { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+.scroll { overflow-y: auto; padding: 28px 16px 40px; }
+.page { max-width: 680px; margin: 0 auto; }
+
+.notice { background: var(--amber-bg); color: var(--ink); border: 1px solid var(--amber); border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 18px; }
+.notice[hidden] { display: none; }
+
+/* Start screen */
+.start h1 { font-family: var(--font-story); font-weight: 600; font-size: 30px; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; }
+.start p.lede { color: var(--muted); margin: 0 0 20px; max-width: 60ch; }
+.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field label, .label { font-weight: 600; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+textarea, input[type="text"], select { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
+textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+#premise { min-height: 140px; font-family: var(--font-story); font-size: 16px; }
+.examples { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 18px; }
+.chip { border: 1px dashed var(--line); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Story text */
+.story { font-family: var(--font-story); font-size: 18px; line-height: 1.75; }
+.story p { margin: 0 0 1.1em; }
+.story p.reading { background: var(--amber-bg); border-radius: 4px; box-shadow: 0 0 0 6px var(--amber-bg); }
+.story .premise-card { font-family: var(--font-ui); font-size: 14px; color: var(--muted); border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin-bottom: 28px; white-space: pre-wrap; }
+.story .premise-card b { color: var(--ink); display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.direction { font-family: var(--font-ui); font-size: 14px; margin: 6px 0 22px; padding: 8px 12px; border-radius: 8px; background: var(--amber-bg); color: var(--ink); border-left: 3px solid var(--amber); }
+.direction .who { font-weight: 700; color: var(--amber); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+.verdict { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+.verdict .pill { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; border-radius: 999px; padding: 1px 7px; margin-right: 6px; border: 1px solid currentColor; }
+.verdict .pill.accepted { color: var(--accent); }
+.verdict .pill.adjusted { color: var(--amber); }
+.verdict .pill.refused { color: var(--warn); }
+.thinking { color: var(--muted); font-style: italic; }
+.turn-break { border: 0; border-top: 1px solid var(--line); margin: 8px auto 22px; width: 40px; }
+
+/* Composer */
+.composer { border-top: 1px solid var(--line); background: var(--surface); padding: 12px 16px; }
+.composer .page { display: grid; gap: 8px; }
+.composer textarea { min-height: 56px; max-height: 180px; }
+.composer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.composer-row .spacer { flex: 1; }
+.hint { color: var(--muted); font-size: 13px; }
+.err { color: var(--warn); font-size: 13px; }
+
+/* Side desk */
+aside.desk { border-left: 1px solid var(--line); background: var(--surface); overflow-y: auto; padding: 16px; display: grid; align-content: start; gap: 22px; }
+.section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.slider-row { display: grid; gap: 4px; margin-bottom: 14px; }
+.slider-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; font-size: 14px; }
+.slider-head output { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.realism-desc { font-size: 13px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.realism-desc b { color: var(--ink); }
+
+.entries { display: grid; gap: 8px; }
+.entry { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px; }
+.entry.fresh { border-color: var(--accent); }
+.entry-head { display: flex; gap: 6px; align-items: center; }
+.entry input { border: 0; background: transparent; padding: 2px 0; font-weight: 700; font-size: 14px; width: 100%; }
+.entry textarea { border: 0; background: transparent; padding: 0; min-height: 40px; font-size: 13px; color: var(--muted); resize: vertical; }
+.entry input:focus, .entry textarea:focus { outline: none; }
+.entry:focus-within { border-color: var(--accent); }
+.x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.x:hover { color: var(--warn); }
+.empty { color: var(--muted); font-size: 13px; font-style: italic; }
+
+.voice-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+
+/* Dialog */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(10, 14, 20, .45); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.dialog-backdrop[hidden] { display: none; }
+.dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; width: min(520px, 100%); max-height: 80vh; overflow-y: auto; padding: 18px; display: grid; gap: 12px; }
+.dialog h3 { margin: 0; font-family: var(--font-story); font-size: 20px; }
+.saved-list { display: grid; gap: 8px; }
+.saved { display: flex; gap: 10px; align-items: center; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.saved .meta { flex: 1; min-width: 0; }
+.saved .meta b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved .meta span { color: var(--muted); font-size: 12px; }
+.saved.current { border-color: var(--accent); }
+
+/* Views */
+.views { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.views button { border: 0; background: transparent; border-radius: 7px; padding: 5px 12px; font-weight: 600; font-size: 14px; cursor: pointer; color: var(--muted); }
+.views button.active { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.views .only-phone { display: none; }
+.app { grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); }
+.app > * { min-width: 0; }
+.view { min-height: 0; }
+.view[hidden] { display: none !important; }
+.fullpage { overflow-y: auto; padding: 24px 16px 48px; }
+.fullpage .wide { max-width: 1040px; margin: 0 auto; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { font-family: var(--font-story); font-weight: 600; font-size: 28px; margin: 0; text-wrap: balance; }
+.page-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { flex: 1; border: 0; background: var(--raised); padding: 6px 10px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+
+/* Characters page */
+.char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.char-card { background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; align-content: start; }
+.char-top { display: flex; gap: 12px; align-items: center; }
+.avatar { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-story); font-weight: 600; font-size: 20px; color: #fff; flex: none; }
+.char-top h3 { margin: 0; font-family: var(--font-story); font-size: 19px; line-height: 1.25; }
+.char-role { color: var(--accent); font-size: 13px; font-weight: 600; }
+.char-details { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.char-stats { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.char-profile { font-size: 14px; line-height: 1.55; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
+.char-profile b { color: var(--ink); }
+.char-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.char-card textarea, .char-card input[type="text"] { font-size: 14px; }
+.search { max-width: 260px; }
+
+/* Map page */
+.map-wrap { position: relative; background: #d9cfb4; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.map-wrap canvas { display: block; width: 100%; height: auto; cursor: pointer; touch-action: manipulation; }
+.map-empty { aspect-ratio: 4 / 3; display: grid; place-items: center; text-align: center; padding: 24px; color: #4a4232; font-family: var(--font-story); font-size: 17px; }
+.map-empty[hidden], .map-wrap canvas[hidden] { display: none; }
+.map-below { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 14px; }
+.place-card { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.place-card h3 { margin: 0 0 4px; font-family: var(--font-story); font-size: 18px; }
+.place-card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
+.place-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(0,0,0,.15); }
+
+@media (max-width: 880px) {
+  .main { grid-template-columns: 1fr; }
+  aside.desk { border-left: 0; display: none; }
+  .main.show-desk aside.desk { display: grid; }
+  .main.show-desk .reader { display: none; }
+  .views .only-phone { display: block; }
+  .views { order: 5; width: 100%; }
+  .views button { flex: 1; padding: 6px 4px; }
+  .story { font-size: 17px; }
+  .map-below { grid-template-columns: 1fr; }
+  header.bar { gap: 8px; padding: 8px 12px; }
+  .bar-actions { width: 100%; flex-wrap: nowrap; gap: 6px; order: 4; }
+  .bar-actions .btn { flex: 1 1 0; min-width: 0; padding: 5px 2px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .story-title { flex-basis: 0; }
+  .views button { font-size: 13px; }
+  .scroll { padding-top: 18px; }
+  .composer { padding: 10px 12px; }
+  .composer textarea { min-height: 48px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .entry.fresh { transition: border-color 1.5s; }
+}
+/* Offline AI panel */
+progress { width: 100%; height: 8px; accent-color: var(--accent); margin-top: 10px; }
+progress[hidden] { display: none; }
+.ai-status { font-size: 13px; margin-top: 8px; color: var(--muted); }
+.ai-status.ok { color: var(--accent); font-weight: 600; }
+.ai-status.bad { color: var(--warn); }
+#aiSection { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.privacy { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">Story <span>AI</span></div>
+    <div class="story-title" id="storyTitle">New story</div>
+    <nav class="views" id="views" aria-label="Views">
+      <button type="button" data-view="story" class="active">Story</button>
+      <button type="button" data-view="characters">Characters</button>
+      <button type="button" data-view="map">Map</button>
+      <button type="button" data-view="settings" class="only-phone">Settings</button>
+    </nav>
+    <div class="bar-actions">
+      <button class="btn small" id="voiceToggle" type="button" aria-pressed="false">Voice: off</button>
+      <button class="btn small" id="copyBtn" type="button">Copy</button>
+      <button class="btn small" id="savedBtn" type="button">Stories</button>
+      <button class="btn small" id="newBtn" type="button">New</button>
+    </div>
+  </header>
+
+  <div class="main view" id="main">
+
+    <section class="reader">
+      <div class="scroll" id="scroll">
+        <div class="page">
+          <div class="notice" id="noClaude" hidden>
+            <span id="noClaudeText">The offline AI isn't running yet.</span> <button class="btn small" id="setupAiBtn" type="button">Set up offline AI</button>
+          </div>
+
+          <div class="start" id="startView">
+            <h1>What's the story about?</h1>
+            <p class="lede">Describe the setup: who it's about, where it happens, the kind of story. This sets the rules of the world, so what counts as "realistic" is judged against it.</p>
+            <div class="field">
+              <label for="premise">Your prompt</label>
+              <textarea id="premise" placeholder="A tired night-shift nurse in a small mountain town notices that the same patient has been admitted three nights in a row, but nobody else remembers him."></textarea>
+            </div>
+            <div class="examples" id="examples">
+              <button class="chip" type="button">Realistic survival: lost hiking alone in the Rockies</button>
+              <button class="chip" type="button">Fantasy: a blacksmith's apprentice finds a talking sword</button>
+              <button class="chip" type="button">Mystery: a 1920s jazz club murder</button>
+              <button class="chip" type="button">Sci-fi: the last mechanic on a failing space station</button>
+            </div>
+            <div class="field">
+              <label for="style">Style notes (optional)</label>
+              <input type="text" id="style" placeholder="e.g. first person, present tense, dark humour, for adults">
+            </div>
+            <div class="composer-row">
+              <button class="btn primary" id="beginBtn" type="button">Write the opening</button>
+              <span class="hint" id="beginHint">Writes 3 paragraphs, then waits for you.</span>
+            </div>
+            <div class="err" id="beginErr"></div>
+          </div>
+
+          <div class="story" id="storyView" hidden></div>
+        </div>
+      </div>
+
+      <div class="composer" id="composer" hidden>
+        <div class="page">
+          <label class="label" for="direction">What happens next? (or what you do)</label>
+          <textarea id="direction" placeholder="I pick up the large rock and throw it at the door."></textarea>
+          <div class="composer-row">
+            <button class="btn primary" id="continueBtn" type="button">Continue</button>
+            <button class="btn" id="stopBtn" type="button" hidden>Stop</button>
+            <button class="btn ghost" id="undoBtn" type="button">Undo last part</button>
+            <button class="btn ghost" id="redoBtn" type="button">Rewrite last part</button>
+            <span class="spacer"></span>
+            <span class="hint" id="contHint"></span>
+          </div>
+          <div class="err" id="contErr"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="desk" id="desk">
+      <div class="section" id="aiSection">
+        <h2>Offline AI</h2>
+        <div class="field" style="margin-bottom:8px">
+          <label for="modelSel">Model</label>
+          <select id="modelSel"></select>
+        </div>
+        <div class="hint" id="modelInfo"></div>
+        <div class="composer-row" style="margin-top:10px">
+          <button class="btn primary small" id="loadBtn" type="button">Download and start</button>
+          <button class="btn small ghost" id="deleteModelBtn" type="button">Delete download</button>
+        </div>
+        <progress id="loadProg" max="1" value="0" hidden></progress>
+        <div class="ai-status" id="aiStatus"></div>
+        <div class="privacy">The AI runs on this device. Your stories are never sent anywhere. The model is downloaded once; after that it works with no internet.</div>
+      </div>
+      <div class="section">
+        <h2>Display</h2>
+        <div class="seg" id="themeSeg" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="auto">Auto</button>
+          <button type="button" data-theme-choice="light">Light</button>
+          <button type="button" data-theme-choice="dark">Dark</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>How it writes</h2>
+        <div class="slider-row">
+          <div class="slider-head"><label for="paras">Paragraphs per turn</label><output id="parasOut">3</output></div>
+          <input type="range" id="paras" min="1" max="10" step="1" value="3">
+          <div class="scale"><span>1</span><span>10</span></div>
+        </div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="realism">Realism</label><output id="realismOut">60</output></div>
+          <input type="range" id="realism" min="0" max="100" step="5" value="60">
+          <div class="scale"><span>0 · anything goes</span><span>100 · strict</span></div>
+        </div>
+        <div class="realism-desc" id="realismDesc"></div>
+      </div>
+
+      <div class="section">
+        <h2>Read aloud</h2>
+        <div class="voice-row">
+          <select id="voiceSel" aria-label="Voice"></select>
+        </div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="rate">Speed</label><output id="rateOut">1.0×</output></div>
+          <input type="range" id="rate" min="0.6" max="1.5" step="0.05" value="1">
+        </div>
+        <div class="composer-row">
+          <button class="btn small" id="readAllBtn" type="button">Read whole story</button>
+          <button class="btn small" id="readStopBtn" type="button">Stop reading</button>
+        </div>
+        <p class="hint" id="voiceHint"></p>
+      </div>
+
+      <div class="section">
+        <h2>Characters <button class="btn small ghost" id="addChar" type="button">+ Add</button></h2>
+        <div class="entries" id="chars"></div>
+      </div>
+
+      <div class="section">
+        <h2>Places <button class="btn small ghost" id="addPlace" type="button">+ Add</button></h2>
+        <div class="entries" id="places"></div>
+      </div>
+      <p class="hint">The AI updates these after every part. You can edit them, and your changes become fact in the story.</p>
+    </aside>
+  </div>
+
+  <section class="view fullpage" id="charactersView" hidden>
+    <div class="wide">
+      <div class="page-head">
+        <div>
+          <h1>Characters</h1>
+          <p id="charSummary">Everyone the story has introduced so far.</p>
+        </div>
+        <input type="text" class="search" id="charSearch" placeholder="Search characters" aria-label="Search characters">
+      </div>
+      <div class="char-grid" id="charGrid"></div>
+    </div>
+  </section>
+
+  <section class="view fullpage" id="mapView" hidden>
+    <div class="wide">
+      <div class="page-head">
+        <div>
+          <h1 id="mapTitle">World map</h1>
+          <p id="mapSub">The AI draws a map from the places in your story.</p>
+        </div>
+        <div class="composer-row">
+          <button class="btn primary" id="mapBtn" type="button">Draw the map</button>
+          <button class="btn" id="mapAiBtn" type="button" title="Slower: the AI decides the terrain and where each place goes">Let the AI design it</button>
+          <button class="btn ghost" id="mapStop" type="button" hidden>Stop</button>
+        </div>
+      </div>
+      <div class="err" id="mapErr"></div>
+      <div class="map-wrap" id="mapWrap">
+        <div class="map-empty" id="mapEmpty">No map yet. Write a few parts of your story, then press "Draw the map".</div>
+        <canvas id="mapCanvas" width="1200" height="900" hidden aria-label="Map of the story world"></canvas>
+      </div>
+      <div class="map-below">
+        <div class="place-card" id="placeCard"><span class="hint">Tap a place on the map to see what the story knows about it.</span></div>
+        <div>
+          <div class="label" style="margin-bottom:6px">Places</div>
+          <div class="place-list" id="placeList"></div>
+          <div class="legend" id="legend" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="dialog-backdrop" id="savedDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="savedTitle">
+    <h3 id="savedTitle">My stories</h3>
+    <div class="hint" id="savedWhere"></div>
+    <div class="composer-row">
+      <button class="btn small" id="backupBtn" type="button">Back up all stories</button>
+      <label class="btn small" for="restoreFile">Restore from backup</label>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+      <span class="hint" id="backupMsg"></span>
+    </div>
+    <div class="saved-list" id="savedList"></div>
+    <div class="composer-row"><span class="spacer"></span><button class="btn" id="savedClose" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" id="confirmDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirmText">
+    <h3 id="confirmText">Are you sure?</h3>
+    <div class="composer-row"><span class="spacer"></span>
+      <button class="btn" id="confirmNo" type="button">Cancel</button>
+      <button class="btn primary" id="confirmYes" type="button">Yes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const NOTES = "@@NOTES@@";
+  const LS_KEY = "storyai.stories.v1";
+  const LS_PREFS = "storyai.prefs.v1";
+
+  // ---------- state ----------
+  let story = blankStory();
+  let sample = null;          // the on-device AI, same call shape as before
+  let db = null, uid = null;  // saved stories
+  let busy = null;            // AbortController while writing
+  let prefs = loadPrefs();
+
+  function blankStory() {
+    return { id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: "", premise: "", style: "", turns: [], characters: [], places: [], updated: Date.now() };
+  }
+  function safeLS(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  function loadPrefs() {
+    return Object.assign({ paras: 3, realism: 60, voice: false, voiceName: "", rate: 1, theme: "auto" },
+      safeLS(() => JSON.parse(localStorage.getItem(LS_PREFS)) || {}, {}));
+  }
+  function savePrefs() { safeLS(() => localStorage.setItem(LS_PREFS, JSON.stringify(prefs))); }
+
+  // ---------- realism ----------
+  const BANDS = [
+    { max: 10, name: "Anything goes", reader: "Whatever you write happens, exactly as you say it. \"I can fly now\" means you fly.",
+      rule: "Treat everything the reader writes as true the moment they write it, even if it breaks the world's rules or physics (suddenly flying, shooting lasers from their eyes, a door that wasn't there). Never refuse or water it down; make it happen vividly and carry on." },
+    { max: 35, name: "Loose", reader: "Wild ideas mostly work, but the story finds some reason or cost for them.",
+      rule: "Mostly accept the reader's direction, including unlikely or impossible things, but give strange events a cost, a side effect, or an in-world explanation so the story still hangs together." },
+    { max: 65, name: "Bendable", reader: "Things that fit the world work. Impossible ones become attempts that half-work or go wrong in an interesting way.",
+      rule: "Accept directions that are plausible in this world. Anything that breaks the world's established rules becomes an attempt that partly succeeds, fails, or backfires in an interesting way. The reader may add small convenient details only if they fit what is already established." },
+    { max: 90, name: "Realistic", reader: "Your directions are attempts. The world's rules, the character's body, skills and gear decide what actually happens.",
+      rule: "Treat the reader's direction as what the character TRIES to do, not as the outcome. Decide the outcome by the world's rules, physics, the character's strength, skills, injuries, tiredness and equipment, and facts already established. The reader cannot invent new facts about the world (an item that was never there, a skill never shown); such claims turn out false or don't help." },
+    { max: 100, name: "Strict realism", reader: "Every action is an attempt with real effort, weight, fatigue and consequences. \"I pick up the large rock\" might mean straining to lift it an inch.",
+      rule: "Be strictly realistic. The reader's direction is only an attempt. Show real effort, weight, time, pain, fatigue, fear and consequences. A normal person straining against something heavy barely manages it or fails; injuries last; strangers react like real people; luck is rare. The reader cannot add facts about the world or the character's abilities that were not established. Never let the character do something their body, skills or situation would not allow." }
+  ];
+  function band(r) { return BANDS.find((b) => r <= b.max) || BANDS[BANDS.length - 1]; }
+  function renderRealism() {
+    const r = prefs.realism, b = band(r);
+    $("realismOut").textContent = r;
+    $("realismDesc").innerHTML = "";
+    const strong = document.createElement("b"); strong.textContent = b.name + ". ";
+    $("realismDesc").append(strong, document.createTextNode(b.reader));
+  }
+
+  // ---------- prompt ----------
+  function storySoFar(maxChars) {
+    const parts = [];
+    story.turns.forEach((t, i) => {
+      if (t.direction) parts.push("[Reader's direction: " + t.direction + "]");
+      parts.push(t.paragraphs.join("\n\n"));
+    });
+    let text = parts.join("\n\n");
+    const MAX = maxChars || 4500;
+    if (text.length > MAX) text = "[...]\n" + text.slice(-MAX);
+    return text;
+  }
+  function bibleText(list) {
+    if (!list.length) return "(none yet)";
+    return list.map((e) => "- " + e.name + ": " + (e.details || "")).join("\n");
+  }
+  function splitOutput(text) {
+    const i = text.indexOf(NOTES);
+    if (i < 0) {
+      // hide a half-written marker while streaming
+      const tail = text.lastIndexOf("@@");
+      return { prose: tail > -1 && text.length - tail < NOTES.length ? text.slice(0, tail) : text, notes: null };
+    }
+    return { prose: text.slice(0, i), notes: text.slice(i + NOTES.length) };
+  }
+  function toParas(prose) {
+    return prose.replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, " ").replace(/^#+\s*/, "").trim()).filter(Boolean);
+  }
+  function parseNotes(raw) {
+    if (!raw) return null;
+    const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    try { return JSON.parse(raw.slice(a, b + 1)); } catch (e) { return null; }
+  }
+  function mergeList(oldList, newList) {
+    if (!Array.isArray(newList)) return oldList;
+    const out = [], seen = new Set();
+    newList.forEach((e) => {
+      if (!e || !e.name) return;
+      const name = String(e.name).trim(), key = name.toLowerCase();
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      const prev = oldList.find((o) => o.name.toLowerCase() === key);
+      const details = String(e.details || (prev && prev.details) || "").trim();
+      out.push(Object.assign({}, prev || {}, { name, details,
+        role: String(e.role || (prev && prev.role) || "").trim(),
+        fresh: !prev || prev.details !== details }));
+    });
+    oldList.forEach((o) => { if (!seen.has(o.name.toLowerCase())) { const c = Object.assign({}, o); delete c.fresh; out.push(c); } });
+    return out;
+  }
+
+  // ---------- writing ----------
+  // ---------- writing with the on-device AI ----------
+  // Small models have a 4,096-token memory, so each part is written from: premise + character/place notes
+  // + a running summary + the most recent text. A second, JSON-locked call then updates the notes.
+  const CTX = 4096;
+  const estTokens = (s) => Math.ceil(s.length / 3.3);
+  function bibleShort(list, maxChars) {
+    let out = bibleText(list);
+    if (out.length > maxChars) out = out.slice(0, maxChars) + "\n(...)";
+    return out;
+  }
+  function storyPrompt(direction) {
+    const n = prefs.paras, r = prefs.realism, b = band(r);
+    const first = story.turns.length === 0;
+    const maxTokens = Math.min(1900, n * 170 + 60);
+    const rules = [
+      "You are a skilled storyteller writing an interactive story with a reader. Write vivid, natural prose, with dialogue where it fits.",
+      "Write only story text: no title, no headings, no lists, no notes, and no questions to the reader.",
+      first ? "" : "REALISM SETTING " + r + "/100 (" + b.name + "). How to treat the reader's direction: " + b.rule,
+      "Judge what is realistic against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
+      story.style ? "STYLE THE READER WANTS: " + story.style : ""
+    ].filter(Boolean).join("\n");
+    const notes = [
+      "PREMISE: " + story.premise,
+      "CHARACTERS:\n" + bibleShort(story.characters, 1300),
+      "PLACES:\n" + bibleShort(story.places, 600),
+      story.summary ? "WHAT HAS HAPPENED SO FAR: " + story.summary : ""
+    ].filter(Boolean).join("\n\n");
+    const ask = first
+      ? "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at a moment where the reader can decide what happens next."
+      : "READER'S DIRECTION: " + (direction || "(none; continue the story naturally)") + "\n\nContinue the story from exactly where it stopped, applying the realism setting to the reader's direction. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+    const room = CTX - maxTokens - estTokens(rules + notes + ask) - 150;
+    const recent = first ? "" : storySoFar(Math.max(500, Math.floor(room * 3.3)));
+    const content = rules + "\n\n" + notes + (recent ? "\n\nTHE STORY SO FAR (latest part):\n" + recent : "") + "\n\n" + ask;
+    return { messages: [{ role: "user", content }], maxTokens };
+  }
+  function cleanParas(text, n) {
+    return toParas(text.replace(/\*+/g, ""))
+      .map((p) => p.replace(/^(paragraph|part)\s*\d+\s*[:.\-]\s*/i, ""))
+      .filter((p) => p && !/^(here('s| is| are)|sure[,!.]|certainly[,!.]|okay[,!.])/i.test(p) && !/^(paragraph|part)\s*\d+$/i.test(p))
+      .slice(0, n);
+  }
+
+  const NOTES_SCHEMA = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      verdict: { type: "string", enum: ["accepted", "adjusted", "refused", "none"] },
+      verdict_note: { type: "string" },
+      summary: { type: "string" },
+      characters: { type: "array", items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, details: { type: "string" } }, required: ["name", "role", "details"] } },
+      places: { type: "array", items: { type: "object", properties: { name: { type: "string" }, details: { type: "string" } }, required: ["name", "details"] } }
+    },
+    required: ["title", "verdict", "verdict_note", "summary", "characters", "places"]
+  };
+  const MAP_SCHEMA = {
+    type: "object",
+    properties: {
+      name: { type: "string" }, scale: { type: "string" },
+      base: { type: "string", enum: ["plains", "water", "forest", "desert", "snow", "building"] },
+      features: { type: "array", maxItems: 16, items: { type: "object", properties: {
+        type: { type: "string", enum: ["water", "plains", "forest", "hills", "mountains", "snow", "desert", "swamp", "city", "building"] },
+        x: { type: "number" }, y: { type: "number" }, r: { type: "number" }, label: { type: "string" } }, required: ["type", "x", "y", "r", "label"] } },
+      places: { type: "array", maxItems: 12, items: { type: "object", properties: {
+        name: { type: "string" }, x: { type: "number" }, y: { type: "number" },
+        kind: { type: "string", enum: ["city", "town", "village", "building", "room", "landmark", "camp", "natural"] }, note: { type: "string" } }, required: ["name", "x", "y", "kind", "note"] } },
+      roads: { type: "array", maxItems: 12, items: { type: "array", minItems: 2, maxItems: 2, items: { type: "string" } } }
+    },
+    required: ["name", "scale", "base", "features", "places", "roads"]
+  };
+  function notesPrompt(direction, newText) {
+    return [
+      "You keep the records for an interactive story. Read the records and the newest part of the story, then reply with JSON only.",
+      "PREMISE: " + story.premise.slice(0, 600),
+      "CURRENT TITLE: " + (story.title || "(none yet)"),
+      "SUMMARY SO FAR: " + (story.summary || "(the story has just started)"),
+      "KNOWN CHARACTERS:\n" + bibleShort(story.characters, 1300),
+      "KNOWN PLACES:\n" + bibleShort(story.places, 600),
+      direction ? "THE READER ASKED FOR: " + direction : "THE READER GAVE NO DIRECTION THIS TIME.",
+      "NEWEST PART:\n" + newText.slice(-3800),
+      "Fill in the JSON:",
+      "- title: keep the current title if there is one, otherwise invent a short one.",
+      "- verdict: accepted = what the reader asked for happened as asked; adjusted = it happened only partly or differently; refused = it failed or could not happen; none = the reader asked for nothing.",
+      "- verdict_note: one short sentence explaining the verdict, or empty.",
+      "- summary: the whole story so far in under 120 words, updating the old summary with the newest part.",
+      "- characters: every named character, keeping the known ones with the same names. role is 2-5 words. details is under 30 words: looks, condition, what they carry, where they are now.",
+      "- places: every named place, details under 20 words."
+    ].join("\n");
+  }
+
+  // ---------- the on-device model, behind the same call shape the page already uses ----------
+  let llmQueue = Promise.resolve();
+  function runLLM(messages, opts) {
+    const job = llmQueue.then(() => runLLMNow(messages, opts || {}));
+    llmQueue = job.catch(() => {});
+    return job;
+  }
+  async function runLLMNow(messages, { onText, signal, maxTokens = 800, temperature = 0.8, schema } = {}) {
+    if (!engine) throw { code: "no_model" };
+    if (signal && signal.aborted) throw { code: "cancelled" };
+    const stop = () => { try { engine.interruptGenerate(); } catch (e) { /* already stopped */ } };
+    if (signal) signal.addEventListener("abort", stop);
+    let text = "", finish = null;
+    try {
+      const req = { messages, stream: true, max_tokens: maxTokens, temperature, top_p: 0.95 };
+      if (schema) req.response_format = { type: "json_object", schema: JSON.stringify(schema) };
+      else req.frequency_penalty = 0.3;
+      const stream = await engine.chat.completions.create(req);
+      for await (const chunk of stream) {
+        const c = chunk.choices && chunk.choices[0];
+        const d = c && c.delta && c.delta.content;
+        if (d) { text += d; if (onText) onText({ text, delta: d }); }
+        if (c && c.finish_reason) finish = c.finish_reason;
+      }
+      if (signal && signal.aborted) throw { code: "cancelled", text };
+      if (!text.trim()) throw { code: "empty_completion" };
+      return { text, truncated: finish === "length" };
+    } catch (e) {
+      if (signal && signal.aborted) throw { code: "cancelled", text };
+      if (e && e.code) throw e;
+      console.error(e);
+      throw { code: "upstream_error", message: String((e && e.message) || e), text };
+    } finally {
+      if (signal) signal.removeEventListener("abort", stop);
+    }
+  }
+  function makeSample() {
+    const s = (input, opts) => runLLM(typeof input === "string" ? [{ role: "user", content: input }] : input, opts);
+    s.json = async (input, opts) => {
+      const o = Object.assign({ temperature: 0.4 }, opts || {});
+      o.schema = o.schema || { type: "object" };
+      const { text } = await s(input, o);
+      const v = parseNotes(text);
+      if (!v) throw { code: "invalid_json", text };
+      return v;
+    };
+    return s;
+  }
+
+  let notesPending = Promise.resolve(), notesBusy = false;
+  async function writePart(direction) {
+    if (!sample) { showErr("Start the offline AI first: open Settings, then Offline AI, and press Download and start."); return false; }
+    const ctl = new AbortController();
+    busy = ctl;
+    setBusy(true);
+    stopSpeaking();
+    try {
+      $("contHint").textContent = "Finishing the notes...";
+      await notesPending;
+      $("contHint").textContent = "Writing...";
+      const live = document.createElement("div");
+      live.className = "live";
+      if (direction) live.append(directionEl({ direction }));
+      const thinking = document.createElement("p");
+      thinking.className = "thinking";
+      thinking.textContent = "Thinking about what happens next...";
+      live.append(thinking);
+      $("storyView").hidden = false;
+      $("storyView").append(live);
+      scrollDown();
+      const { messages, maxTokens } = storyPrompt(direction);
+      let res;
+      try {
+        res = await sample(messages, {
+          signal: ctl.signal, maxTokens, temperature: 0.85,
+          onText: ({ text }) => { renderLiveParas(live, cleanParas(text, prefs.paras), direction); scrollDown(true); }
+        });
+      } finally { live.remove(); }
+      const paragraphs = cleanParas(res.text, prefs.paras);
+      if (res.truncated && paragraphs.length) {   // ran out of room mid-sentence: end on the last full sentence
+        const last = paragraphs[paragraphs.length - 1], m = last.match(/^[\s\S]*[.!?…]["'”’)]*/);
+        if (m && m[0].length > 40) paragraphs[paragraphs.length - 1] = m[0];
+      }
+      if (!paragraphs.length) throw { code: "empty_completion" };
+      const turn = { direction: direction || "", paragraphs, verdict: "", note: "" };
+      story.turns.push(turn);
+      story.updated = Date.now();
+      renderStory();
+      persist();
+      if (res.truncated && paragraphs.length < prefs.paras) showErr("That part got cut off early. Try fewer paragraphs.");
+      if (prefs.voice) speakTurn(story.turns.length - 1);
+      notesPending = updateNotes(turn);
+      return true;
+    } catch (e) {
+      const code = e && e.code;
+      if (code !== "cancelled") {
+        if (code === "empty_completion") showErr("The AI didn't write anything that time. Try again, or change your direction.");
+        else showErr("Something went wrong while writing" + (e && e.message ? " (" + e.message.slice(0, 120) + ")" : "") + ". Your direction is still in the box; try again.");
+      }
+      renderStory();
+      return false;
+    } finally {
+      busy = null;
+      setBusy(false);
+    }
+  }
+  async function updateNotes(turn) {
+    notesBusy = true;
+    if (!busy) $("contHint").textContent = hintText();
+    try {
+      const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1000, temperature: 0.3 });
+      if (turn.direction) {
+        if (["accepted", "adjusted", "refused"].includes(meta.verdict)) turn.verdict = meta.verdict;
+        if (typeof meta.verdict_note === "string") turn.note = meta.verdict_note.trim().slice(0, 240);
+      }
+      if (meta.title && !story.title) story.title = String(meta.title).slice(0, 80);
+      if (typeof meta.summary === "string" && meta.summary.trim()) story.summary = meta.summary.trim().slice(0, 1200);
+      story.characters = mergeList(story.characters, meta.characters);
+      story.places = mergeList(story.places, meta.places);
+      if (story.turns.includes(turn)) {
+        if (!busy) renderStory();
+        renderBible(); renderCharacters(); renderMapMeta(); persist();
+      }
+    } catch (e) {
+      console.warn("Notes not updated:", e); // the story part is kept; the notes just weren't updated this time
+    } finally {
+      notesBusy = false;
+      if (!busy) $("contHint").textContent = hintText();
+    }
+  }
+  function renderLiveParas(live, paras, direction) {
+    live.innerHTML = "";
+    if (direction) live.append(directionEl({ direction }));
+    paras.forEach((p) => { const el = document.createElement("p"); el.textContent = p; live.append(el); });
+  }
+
+  function setBusy(on) {
+    ["beginBtn", "continueBtn", "undoBtn", "redoBtn", "newBtn"].forEach((id) => { $(id).disabled = on; });
+    $("stopBtn").hidden = !on;
+    $("contHint").textContent = on ? "Writing..." : hintText();
+  }
+  function hintText() { if (notesBusy) return "Updating characters and places in the background..."; return "Next part: " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", realism " + prefs.realism; }
+  function showErr(msg) {
+    const id = story.turns.length ? "contErr" : "beginErr";
+    $(id).textContent = msg;
+  }
+  function clearErr() { $("contErr").textContent = ""; $("beginErr").textContent = ""; }
+  function scrollDown(onlyIfNear) {
+    const s = $("scroll");
+    if (onlyIfNear && s.scrollHeight - s.scrollTop - s.clientHeight > 260) return;
+    s.scrollTop = s.scrollHeight;
+  }
+
+  // ---------- rendering ----------
+  function directionEl(t) {
+    const d = document.createElement("div");
+    d.className = "direction";
+    const who = document.createElement("span"); who.className = "who"; who.textContent = "You";
+    d.append(who, document.createTextNode(t.direction));
+    if (t.verdict && t.verdict !== "accepted" || t.note) {
+      const v = document.createElement("span"); v.className = "verdict";
+      if (t.verdict) { const pill = document.createElement("span"); pill.className = "pill " + t.verdict; pill.textContent = t.verdict === "accepted" ? "happened" : t.verdict === "adjusted" ? "partly" : "didn't work"; v.append(pill); }
+      if (t.note) v.append(document.createTextNode(t.note));
+      d.append(v);
+    }
+    return d;
+  }
+  function renderStory() {
+    const started = story.turns.length > 0;
+    $("startView").hidden = started;
+    $("storyView").hidden = !started && !busy;
+    $("composer").hidden = !started;
+    $("storyTitle").textContent = story.title || (started ? "Untitled story" : "New story");
+    const v = $("storyView");
+    v.innerHTML = "";
+    if (story.premise && (started || busy)) {
+      const pc = document.createElement("div"); pc.className = "premise-card";
+      const b = document.createElement("b"); b.textContent = "Your prompt";
+      pc.append(b, document.createTextNode(story.premise));
+      v.append(pc);
+    }
+    story.turns.forEach((t, ti) => {
+      if (ti > 0 && !t.direction) { const hr = document.createElement("hr"); hr.className = "turn-break"; v.append(hr); }
+      if (t.direction) v.append(directionEl(t));
+      t.paragraphs.forEach((p, pi) => {
+        const el = document.createElement("p"); el.textContent = p; el.dataset.t = ti; el.dataset.p = pi;
+        el.title = "Double-click to read aloud from here";
+        v.append(el);
+      });
+    });
+    $("undoBtn").disabled = !!busy || story.turns.length < 2;
+    $("redoBtn").disabled = !!busy || story.turns.length < 1;
+  }
+  function renderBible() {
+    renderEntries($("chars"), story.characters, "No characters yet. They appear here as the story introduces them.");
+    renderEntries($("places"), story.places, "No places yet.");
+  }
+  function renderEntries(box, list, emptyText) {
+    box.innerHTML = "";
+    if (!list.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = emptyText; box.append(e); return; }
+    list.forEach((item, i) => {
+      const card = document.createElement("div"); card.className = "entry" + (item.fresh ? " fresh" : "");
+      const head = document.createElement("div"); head.className = "entry-head";
+      const name = document.createElement("input"); name.type = "text"; name.value = item.name; name.setAttribute("aria-label", "Name");
+      const del = document.createElement("button"); del.className = "x"; del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove " + item.name);
+      const det = document.createElement("textarea"); det.value = item.details; det.setAttribute("aria-label", "Details for " + item.name); det.rows = 2;
+      name.addEventListener("input", () => { item.name = name.value; queueSave(); });
+      det.addEventListener("input", () => { item.details = det.value; queueSave(); });
+      del.addEventListener("click", () => { list.splice(i, 1); renderBible(); queueSave(); });
+      head.append(name, del); card.append(head, det); box.append(card);
+      if (item.fresh) { delete item.fresh; setTimeout(() => card.classList.remove("fresh"), 2500); }
+    });
+  }
+  function addEntry(list) {
+    list.push({ name: "New", details: "" });
+    renderBible();
+    queueSave();
+  }
+
+  // ---------- saving ----------
+  let saveTimer = null;
+  function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 900); }
+  function cleanStory() {
+    const s = JSON.parse(JSON.stringify(story));
+    s.characters.forEach((c) => delete c.fresh); s.places.forEach((c) => delete c.fresh);
+    s.characters = s.characters.filter((c) => c.name.trim()); s.places = s.places.filter((c) => c.name.trim());
+    return s;
+  }
+  let writing = Promise.resolve();
+  function persist() {
+    if (!story.turns.length) return;
+    const s = cleanStory();
+    const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+    all[s.id] = s;
+    safeLS(() => localStorage.setItem(LS_KEY, JSON.stringify(all)));
+    if (db && uid) {
+      writing = writing.then(() => db.collection("data/users/" + uid).doc(s.id).set({ json: JSON.stringify(s), title: s.title || "Untitled story", updated: s.updated }))
+        .catch((e) => { if (e && e.code === "quota_exceeded") showErr("Your saved stories are full. Delete an old one in My stories."); });
+    }
+  }
+  async function listSaved() {
+    const map = {};
+    const local = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+    Object.values(local).forEach((s) => { map[s.id] = { id: s.id, title: s.title || "Untitled story", updated: s.updated, data: s }; });
+    if (db && uid) {
+      try {
+        const snap = await db.collection("data/users/" + uid).get();
+        snap.docs.forEach((d) => { const v = d.data(); if (!v || !v.json) return;
+          if (!map[d.id] || (v.updated || 0) >= (map[d.id].updated || 0)) map[d.id] = { id: d.id, title: v.title, updated: v.updated, json: v.json }; });
+      } catch (e) { /* fall back to this browser's copies */ }
+    }
+    return Object.values(map).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  }
+  async function openSaved() {
+    $("savedWhere").textContent = "Saved only on this device; nothing is sent anywhere. Back up now and then, because clearing this browser's data would erase them.";
+    const list = $("savedList");
+    list.innerHTML = '<div class="empty">Loading...</div>';
+    $("savedDialog").hidden = false;
+    const items = await listSaved();
+    list.innerHTML = "";
+    if (!items.length) { list.innerHTML = '<div class="empty">No saved stories yet. Stories save themselves after each part.</div>'; return; }
+    items.forEach((it) => {
+      const row = document.createElement("div"); row.className = "saved" + (it.id === story.id ? " current" : "");
+      const meta = document.createElement("div"); meta.className = "meta";
+      const b = document.createElement("b"); b.textContent = it.title;
+      const sp = document.createElement("span"); sp.textContent = it.updated ? new Date(it.updated).toLocaleString() : "";
+      meta.append(b, sp);
+      const open = document.createElement("button"); open.className = "btn small"; open.type = "button"; open.textContent = it.id === story.id ? "Open now" : "Open";
+      const del = document.createElement("button"); del.className = "btn small ghost"; del.type = "button"; del.textContent = "Delete";
+      open.addEventListener("click", () => {
+        try { const s = it.data || JSON.parse(it.json); loadStory(s); $("savedDialog").hidden = true; } catch (e) { open.textContent = "Couldn't open"; }
+      });
+      del.addEventListener("click", async () => {
+        if (!(await confirmBox("Delete \"" + it.title + "\"? This can't be undone."))) return;
+        const local = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+        delete local[it.id]; safeLS(() => localStorage.setItem(LS_KEY, JSON.stringify(local)));
+        if (db && uid) { try { await db.collection("data/users/" + uid).doc(it.id).delete(); } catch (e) {} }
+        if (it.id === story.id) { story = blankStory(); renderAll(); }
+        openSaved();
+      });
+      row.append(meta, open, del); list.append(row);
+    });
+  }
+  function loadStory(s) {
+    stopSpeaking();
+    story = Object.assign(blankStory(), s);
+    clearErr();
+    renderAll();
+    safeLS(() => localStorage.setItem("storyai.current", story.id));
+    scrollDown();
+  }
+  function confirmBox(text) {
+    return new Promise((resolve) => {
+      $("confirmText").textContent = text;
+      $("confirmDialog").hidden = false;
+      const done = (v) => { $("confirmDialog").hidden = true; $("confirmYes").onclick = $("confirmNo").onclick = null; resolve(v); };
+      $("confirmYes").onclick = () => done(true);
+      $("confirmNo").onclick = () => done(false);
+      $("confirmYes").focus();
+    });
+  }
+
+  // ---------- voice ----------
+  const synth = window.speechSynthesis || null;
+  const FEMALE = /female|woman|zira|aria|jenny|michelle|samantha|victoria|karen|moira|tessa|fiona|serena|susan|hazel|libby|sonia|natasha|emma|ava|allison|joanna|salli|kimberly|kendra|ivy|amy|clara|elsa|ana|nancy|sara|jane|catherine|heather|linda|eva|heera|kalpana|google us english|google uk english female/i;
+  const MALE = /\bmale\b|david|mark|guy|george|daniel|alex\b|fred|ryan|james|thomas|brian|christopher|eric|roger|steffan|andrew|william|richard|ravi|rishi|aaron|arthur|oliver/i;
+  let voices = [];
+  function femaleVoices() {
+    const all = synth ? synth.getVoices() : [];
+    const en = all.filter((v) => /^en/i.test(v.lang));
+    const pool = en.length ? en : all;
+    const fem = pool.filter((v) => FEMALE.test(v.name) && !MALE.test(v.name.replace(/female/i, "")));
+    return { fem, all: pool };
+  }
+  function loadVoices() {
+    if (!synth) { $("voiceSel").innerHTML = "<option>No voices in this browser</option>"; $("voiceSel").disabled = true; $("voiceHint").textContent = "This browser can't read aloud."; return; }
+    const { fem, all } = femaleVoices();
+    voices = fem.length ? fem : all;
+    $("voiceHint").textContent = fem.length ? "" : (all.length ? "No female voice was found on this device, so all voices are listed." : "Voices are still loading...");
+    const sel = $("voiceSel");
+    sel.innerHTML = "";
+    voices.forEach((v) => { const o = document.createElement("option"); o.value = v.name; o.textContent = v.name.replace(/^Microsoft\s+/, "").replace(/\s+Online \(Natural\)/, " (natural)") + " · " + v.lang; sel.append(o); });
+    // prefer natural/online voices
+    const preferred = voices.find((v) => v.name === prefs.voiceName) || voices.find((v) => /natural|neural|online/i.test(v.name)) || voices[0];
+    if (preferred) sel.value = preferred.name;
+  }
+  function currentVoice() { return voices.find((v) => v.name === $("voiceSel").value) || null; }
+  function chunks(text) {
+    const sentences = text.match(/[^.!?…]+[.!?…]+["'”’)]*\s*|[^.!?…]+$/g) || [text];
+    const out = []; let cur = "";
+    sentences.forEach((s) => { if ((cur + s).length > 220 && cur) { out.push(cur); cur = s; } else cur += s; });
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
+  let speakToken = 0;
+  function speakFrom(ti, pi, onlyThisTurn) {
+    if (!synth) return;
+    stopSpeaking();
+    const token = ++speakToken;
+    const queue = [];
+    story.turns.forEach((t, a) => {
+      if (a < ti || (onlyThisTurn && a !== ti)) return;
+      t.paragraphs.forEach((p, b) => { if (a === ti && b < pi) return; queue.push({ t: a, p: b, text: p }); });
+    });
+    const voice = currentVoice();
+    let firstOfPara = true;
+    queue.forEach((item) => {
+      chunks(item.text).forEach((c, ci) => {
+        const u = new SpeechSynthesisUtterance(c);
+        if (voice) { u.voice = voice; u.lang = voice.lang; }
+        u.rate = prefs.rate;
+        if (ci === 0) u.onstart = () => { if (token === speakToken) markReading(item.t, item.p); };
+        synth.speak(u);
+      });
+    });
+    const end = new SpeechSynthesisUtterance(" ");
+    end.volume = 0; end.onend = () => { if (token === speakToken) markReading(-1, -1); };
+    synth.speak(end);
+  }
+  function speakTurn(ti) { speakFrom(ti, 0, true); }
+  function speakText(text) {
+    if (!synth) return;
+    stopSpeaking();
+    const voice = currentVoice();
+    chunks(text).forEach((c) => { const u = new SpeechSynthesisUtterance(c); if (voice) { u.voice = voice; u.lang = voice.lang; } u.rate = prefs.rate; synth.speak(u); });
+  }
+  function stopSpeaking() { if (synth) { speakToken++; synth.cancel(); } markReading(-1, -1); }
+  function markReading(t, p) {
+    document.querySelectorAll(".story p.reading").forEach((el) => el.classList.remove("reading"));
+    if (t < 0) return;
+    const el = document.querySelector('.story p[data-t="' + t + '"][data-p="' + p + '"]');
+    if (el) { el.classList.add("reading"); if (prefs.voice) el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
+  }
+  function renderVoiceToggle() {
+    $("voiceToggle").textContent = "Voice " + (prefs.voice ? "on" : "off");
+    $("voiceToggle").classList.toggle("on", prefs.voice);
+    $("voiceToggle").setAttribute("aria-pressed", String(prefs.voice));
+  }
+
+  // ---------- wiring ----------
+  function renderAll() {
+    renderStory(); renderBible(); renderRealism();
+    $("paras").value = prefs.paras; $("parasOut").textContent = prefs.paras;
+    $("realism").value = prefs.realism;
+    $("rate").value = prefs.rate; $("rateOut").textContent = Number(prefs.rate).toFixed(2).replace(/0$/, "") + "×";
+    $("beginHint").textContent = "Writes " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", then waits for you.";
+    $("contHint").textContent = busy ? "Writing..." : hintText();
+    renderVoiceToggle();
+    renderCharacters();
+    renderMapMeta();
+    if (story.map && !$("mapView").hidden) drawMap();
+  }
+
+  $("paras").addEventListener("input", (e) => { prefs.paras = +e.target.value; savePrefs(); renderAll(); });
+  $("realism").addEventListener("input", (e) => { prefs.realism = +e.target.value; savePrefs(); renderRealism(); $("contHint").textContent = busy ? "Writing..." : hintText(); });
+  $("rate").addEventListener("input", (e) => { prefs.rate = +e.target.value; savePrefs(); $("rateOut").textContent = prefs.rate.toFixed(2).replace(/0$/, "") + "×"; });
+  $("voiceSel").addEventListener("change", () => { prefs.voiceName = $("voiceSel").value; savePrefs(); });
+  $("voiceToggle").addEventListener("click", () => {
+    prefs.voice = !prefs.voice; savePrefs(); renderVoiceToggle();
+    if (!prefs.voice) stopSpeaking();
+    else if (story.turns.length) speakTurn(story.turns.length - 1);
+  });
+  $("readAllBtn").addEventListener("click", () => { if (story.turns.length) speakFrom(0, 0, false); });
+  $("readStopBtn").addEventListener("click", stopSpeaking);
+  $("storyView").addEventListener("dblclick", (e) => {
+    const p = e.target.closest("p[data-t]"); if (!p) return;
+    speakFrom(+p.dataset.t, +p.dataset.p, false);
+  });
+
+  $("examples").addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    $("premise").value = c.textContent;
+    $("premise").focus();
+  });
+  $("beginBtn").addEventListener("click", async () => {
+    clearErr();
+    const premise = $("premise").value.trim();
+    if (!premise) { $("beginErr").textContent = "Type a prompt first, or tap one of the examples."; $("premise").focus(); return; }
+    story = blankStory();
+    story.premise = premise;
+    story.style = $("style").value.trim();
+    $("startView").hidden = true; $("storyView").hidden = false;
+    renderStory();
+    $("startView").hidden = true; $("storyView").hidden = false;
+    const ok = await writePart("");
+    if (!ok && !story.turns.length) { $("startView").hidden = false; $("storyView").hidden = true; }
+    safeLS(() => localStorage.setItem("storyai.current", story.id));
+  });
+  async function doContinue() {
+    if (busy) return;
+    clearErr();
+    const dir = $("direction").value.trim();
+    const ok = await writePart(dir);
+    if (ok) $("direction").value = "";
+  }
+  $("continueBtn").addEventListener("click", doContinue);
+  $("direction").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doContinue(); } });
+  $("stopBtn").addEventListener("click", () => { if (busy) busy.abort(); });
+  $("undoBtn").addEventListener("click", () => {
+    if (story.turns.length < 2) return;
+    const t = story.turns.pop();
+    if (t.direction) $("direction").value = t.direction;
+    story.updated = Date.now();
+    stopSpeaking(); renderStory(); persist();
+  });
+  $("redoBtn").addEventListener("click", async () => {
+    if (!story.turns.length || busy) return;
+    const t = story.turns.pop();
+    renderStory();
+    const ok = await writePart(t.direction);
+    if (!ok) { story.turns.push(t); renderStory(); }
+  });
+  $("newBtn").addEventListener("click", async () => {
+    if (story.turns.length && !(await confirmBox("Start a new story? This one is already saved in My stories."))) return;
+    stopSpeaking();
+    story = blankStory();
+    $("premise").value = ""; $("style").value = ""; $("direction").value = "";
+    clearErr(); renderAll();
+    safeLS(() => localStorage.removeItem("storyai.current"));
+  });
+  $("savedBtn").addEventListener("click", openSaved);
+  $("savedClose").addEventListener("click", () => { $("savedDialog").hidden = true; });
+  $("savedDialog").addEventListener("click", (e) => { if (e.target === $("savedDialog")) $("savedDialog").hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("savedDialog").hidden = true; } });
+  $("copyBtn").addEventListener("click", async () => {
+    const text = (story.title ? story.title + "\n\n" : "") + story.turns.map((t) => t.paragraphs.join("\n\n")).join("\n\n");
+    try { await navigator.clipboard.writeText(text || ""); $("copyBtn").textContent = "Copied"; }
+    catch (e) { $("copyBtn").textContent = "Copy failed"; }
+    setTimeout(() => { $("copyBtn").textContent = "Copy"; }, 1600);
+  });
+  $("addChar").addEventListener("click", () => addEntry(story.characters));
+  $("addPlace").addEventListener("click", () => addEntry(story.places));
+  // ---------- theme ----------
+  const hostTheme = document.documentElement.getAttribute("data-theme");
+  function applyTheme() {
+    const root = document.documentElement;
+    if (prefs.theme === "light" || prefs.theme === "dark") root.setAttribute("data-theme", prefs.theme);
+    else if (hostTheme) root.setAttribute("data-theme", hostTheme);
+    else root.removeAttribute("data-theme");
+    document.querySelectorAll("#themeSeg button").forEach((b) => {
+      const on = b.dataset.themeChoice === prefs.theme;
+      b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
+    });
+    if (story.map && !$("mapView").hidden) drawMap();
+  }
+  $("themeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-theme-choice]"); if (!b) return;
+    prefs.theme = b.dataset.themeChoice; savePrefs(); applyTheme();
+  });
+
+  // ---------- views ----------
+  const VIEWS = ["story", "characters", "map", "settings"];
+  function showView(name) {
+    if (!VIEWS.includes(name)) name = "story";
+    $("main").hidden = !(name === "story" || name === "settings");
+    $("main").classList.toggle("show-desk", name === "settings");
+    $("charactersView").hidden = name !== "characters";
+    $("mapView").hidden = name !== "map";
+    document.querySelectorAll("#views button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+    if (name === "characters") renderCharacters();
+    if (name === "map") { renderMapMeta(); if (story.map) requestAnimationFrame(drawMap); }
+    if (name === "story") scrollDown();
+  }
+  $("views").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-view]"); if (!b) return;
+    const name = b.dataset.view;
+    showView(name);
+    try { history.replaceState(null, "", name === "story" ? location.pathname + location.search : "#" + name); } catch (err) { /* address bar not available */ }
+  });
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+
+  // ---------- characters page ----------
+  const AVATAR_COLORS = ["#2f6f76", "#8a5a1f", "#5b4b8a", "#8a3b3b", "#3f6b3a", "#365a8a", "#7a4a6e", "#5e6b2f"];
+  function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function initials(name) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?"; }
+  function appearances(name) {
+    const first = name.split(/\s+/)[0].toLowerCase();
+    const re = new RegExp("\\b" + first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+    let firstPart = 0, count = 0;
+    story.turns.forEach((t, i) => { if (re.test(t.paragraphs.join(" "))) { count++; if (!firstPart) firstPart = i + 1; } });
+    return { firstPart, count };
+  }
+  function renderCharacters() {
+    const grid = $("charGrid");
+    if (!grid || $("charactersView").hidden) return;
+    const q = $("charSearch").value.trim().toLowerCase();
+    const list = story.characters.filter((c) => c.name.trim() && (!q || (c.name + " " + (c.role || "") + " " + c.details).toLowerCase().includes(q)));
+    $("charSummary").textContent = story.characters.length
+      ? story.characters.length + " character" + (story.characters.length === 1 ? "" : "s") + " in " + (story.title || "this story") + "."
+      : "Characters appear here as the story introduces them.";
+    grid.innerHTML = "";
+    if (!list.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = story.characters.length ? "No one matches that search." : "No characters yet. Start a story and they'll show up here."; grid.append(e); return; }
+    list.forEach((c) => grid.append(charCard(c)));
+  }
+  function charCard(c, editing) {
+    const card = document.createElement("article"); card.className = "char-card";
+    const top = document.createElement("div"); top.className = "char-top";
+    const av = document.createElement("div"); av.className = "avatar"; av.textContent = initials(c.name);
+    av.style.background = AVATAR_COLORS[hash(c.name.toLowerCase()) % AVATAR_COLORS.length];
+    const nameBox = document.createElement("div");
+    const actions = document.createElement("div"); actions.className = "char-actions";
+    if (editing) {
+      const n = document.createElement("input"); n.type = "text"; n.value = c.name; n.setAttribute("aria-label", "Name");
+      const r = document.createElement("input"); r.type = "text"; r.value = c.role || ""; r.placeholder = "Role, e.g. the town doctor"; r.setAttribute("aria-label", "Role");
+      const d = document.createElement("textarea"); d.value = c.details; d.rows = 5; d.setAttribute("aria-label", "Description");
+      nameBox.append(n); top.append(av, nameBox);
+      const save = document.createElement("button"); save.className = "btn small primary"; save.type = "button"; save.textContent = "Save";
+      const cancel = document.createElement("button"); cancel.className = "btn small ghost"; cancel.type = "button"; cancel.textContent = "Cancel";
+      save.addEventListener("click", () => { c.name = n.value.trim() || c.name; c.role = r.value.trim(); c.details = d.value.trim(); renderBible(); renderCharacters(); queueSave(); });
+      cancel.addEventListener("click", () => card.replaceWith(charCard(c)));
+      actions.append(save, cancel);
+      card.append(top, r, d, actions);
+      return card;
+    }
+    const h = document.createElement("h3"); h.textContent = c.name;
+    nameBox.append(h);
+    if (c.role) { const r = document.createElement("div"); r.className = "char-role"; r.textContent = c.role; nameBox.append(r); }
+    top.append(av, nameBox);
+    const det = document.createElement("div"); det.className = "char-details"; det.textContent = c.details || "No details yet.";
+    const a = appearances(c.name);
+    const stats = document.createElement("div"); stats.className = "char-stats";
+    stats.textContent = a.count ? "First appears in part " + a.firstPart + " · in " + a.count + " of " + story.turns.length + " parts" : "Not named in the story text yet";
+    card.append(top, det, stats);
+    if (c.profile) {
+      const pr = document.createElement("div"); pr.className = "char-profile";
+      c.profile.split(/\n+/).filter((l) => l.trim()).forEach((line) => {
+        const p = document.createElement("div");
+        const m = line.match(/^\**([A-Za-z ]{3,24}):\**\s*(.*)$/);
+        if (m) { const b = document.createElement("b"); b.textContent = m[1] + ": "; p.append(b, document.createTextNode(m[2].replace(/\*\*/g, ""))); }
+        else p.textContent = line.replace(/\*\*/g, "");
+        pr.append(p);
+      });
+      card.append(pr);
+    }
+    const prof = document.createElement("button"); prof.className = "btn small"; prof.type = "button";
+    prof.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
+    const edit = document.createElement("button"); edit.className = "btn small ghost"; edit.type = "button"; edit.textContent = "Edit";
+    const read = document.createElement("button"); read.className = "btn small ghost"; read.type = "button"; read.textContent = "Read aloud";
+    const err = document.createElement("div"); err.className = "err";
+    prof.addEventListener("click", () => writeProfile(c, prof, err));
+    edit.addEventListener("click", () => card.replaceWith(charCard(c, true)));
+    read.addEventListener("click", () => speakText(c.name + ". " + (c.role ? c.role + ". " : "") + (c.profile || c.details || "")));
+    actions.append(prof, edit, read);
+    card.append(actions, err);
+    return card;
+  }
+  async function writeProfile(c, btn, err) {
+    if (!sample) { err.textContent = "Start the offline AI first: Settings, then Offline AI."; return; }
+    btn.disabled = true; btn.textContent = "Writing profile...";
+    const prompt = [
+      "Write a character profile for " + c.name + " from the interactive story below.",
+      "Use only what the story establishes. Where the story is silent, you may make small, reasonable inferences that fit, but do not invent major facts.",
+      "Reply with exactly these five lines and nothing else, each about 1-3 sentences:",
+      "Appearance: ...", "Personality: ...", "Background: ...", "Right now: ... (their current situation, condition and whereabouts)", "Relationships: ...",
+      "", "PREMISE: " + story.premise,
+      "", "NOTES ON " + c.name.toUpperCase() + ": " + (c.role ? c.role + ". " : "") + c.details,
+      "", "OTHER CHARACTERS:", bibleText(story.characters.filter((o) => o !== c)),
+      "", "STORY SO FAR:", storySoFar(3000)
+    ].join("\n");
+    try {
+      const { text } = await sample(prompt, { maxTokens: 450, temperature: 0.6 });
+      c.profile = text.trim();
+      queueSave(); renderCharacters();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
+      if (e && e.code !== "cancelled") err.textContent = e.code === "rate_limited" ? "Too many requests. Try again in a minute." : "Couldn't write the profile. Try again.";
+    }
+  }
+  $("charSearch").addEventListener("input", renderCharacters);
+
+  // ---------- map (the AI lays it out as JSON; the page paints it) ----------
+  const BIOMES = {
+    water: { c: [126, 166, 190], label: "Water" }, plains: { c: [201, 205, 150], label: "Plains" },
+    forest: { c: [112, 145, 86], label: "Forest" }, hills: { c: [184, 167, 112], label: "Hills" },
+    mountains: { c: [140, 130, 116], label: "Mountains" }, snow: { c: [236, 238, 240], label: "Snow" },
+    desert: { c: [226, 204, 143], label: "Desert" }, swamp: { c: [122, 138, 96], label: "Swamp" },
+    city: { c: [190, 170, 145], label: "Town" }, building: { c: [214, 200, 176], label: "Building" }
+  };
+  let mapBusy = null, mapHits = [];
+  function mapPrompt() {
+    const names = story.places.map((p) => p.name).filter(Boolean);
+    return [
+      "Design a top-down map of the world of this story. A program will draw it from your JSON.",
+      "PREMISE: " + story.premise,
+      "PLACES IN THE STORY:\n" + bibleShort(story.places, 900),
+      "LATEST PART OF THE STORY:\n" + (storySoFar(2000) || "(not started)"),
+      "",
+      "How to fill in the JSON:",
+      "- name: a title for this map that fits the story's setting.",
+      "- scale: how wide the area is in real distance, chosen to fit the story (a building, a town, a region or a continent).",
+      "- base: the ground that covers the map where nothing else is. Use water for islands or coasts, building if the story happens inside one building.",
+      "- features: 8 to 16 terrain areas that fit the story's setting. x goes from 0 (left) to 100 (right), y from 0 (top) to 100 (bottom), r is the size from 5 to 40. Overlap several areas of the same type to make long mountain ranges, forests or coastlines. label is a name for notable areas, or an empty string.",
+      "- places: " + (names.length ? "one entry for each of these places, using these exact names: " + names.join(", ") + ". You may add other places the story mentions." : "the important locations the story mentions.") + " Spread them out (at least 8 apart, between 5 and 95) so that directions and distances make sense for the story. note is one short line about the place.",
+      "- roads: pairs of place names that are connected by a road, path or corridor."
+    ].join("\n");
+  }
+  // Small models sometimes skip places or echo instructions; make sure the map still shows what the story knows.
+  function repairMap(m) {
+    const echo = /exact name|map title|e\.g\.|optional|one short line/i;
+    if (!m.name || echo.test(m.name)) m.name = story.title || "World map";
+    if (m.scale && echo.test(m.scale)) m.scale = "";
+    m.places = (m.places || []).filter((p) => p && p.name && !echo.test(p.name));
+    m.features = (m.features || []).filter((f) => f && !echo.test(String(f.label || "")));
+    const r = rng(Date.now() & 0xffffff);
+    story.places.forEach((bp) => {
+      if (m.places.some((p) => p.name.toLowerCase() === bp.name.toLowerCase())) return;
+      let best = null;
+      for (let i = 0; i < 30; i++) {   // pick the spot farthest from the places already on the map
+        const c = { x: 10 + r() * 80, y: 10 + r() * 80 };
+        const d = Math.min(999, ...m.places.map((p) => (p.x - c.x) ** 2 + (p.y - c.y) ** 2));
+        if (!best || d > best.d) best = { x: c.x, y: c.y, d };
+      }
+      m.places.push({ name: bp.name, x: Math.round(best.x), y: Math.round(best.y), kind: "landmark", note: bp.details || "" });
+    });
+    return m;
+  }
+  // When the AI can't lay out a map (small models sometimes can't), draw one from the story's own words.
+  function proceduralMap() {
+    const text = (story.premise + " " + story.places.map((p) => p.name + " " + p.details).join(" ") + " " + storySoFar(3000)).toLowerCase();
+    const has = (re) => re.test(text);
+    const r = rng((Date.now() ^ hash(story.id)) >>> 0);
+    let base = "plains";
+    if (has(/\b(space ?station|spaceship|starship|hospital|school|mansion|house|apartment|office|castle hall|bunker|ship's)\b/) && !has(/\b(forest|mountain|valley|river|road)\b/)) base = "building";
+    else if (has(/\b(island|ocean|sea|archipelago|coast)\b/)) base = "water";
+    else if (has(/\b(desert|dune|sand)\b/)) base = "desert";
+    else if (has(/\b(arctic|tundra|glacier|antarctic)\b/)) base = "snow";
+    else if (has(/\b(forest|woods|jungle)\b/)) base = "forest";
+    const features = [];
+    const add = (type, count, rMin, rMax) => { const cx = 15 + r() * 70, cy = 15 + r() * 70;
+      for (let i = 0; i < count; i++) features.push({ type, x: cx + (r() - .5) * 40, y: cy + (r() - .5) * 30, r: rMin + r() * (rMax - rMin), label: "" }); };
+    if (base === "water") add("plains", 4, 14, 26);
+    if (base === "building") add("building", 6, 10, 22);
+    if (has(/\b(mountain|peak|ridge|cliff|summit|rockies|alps)\b/)) add("mountains", 4, 8, 16);
+    if (has(/\b(snow|ice|glacier|frozen)\b/)) add("snow", 2, 5, 9);
+    if (has(/\b(hill|slope|moor)\b/)) add("hills", 3, 8, 14);
+    if (has(/\b(forest|wood|woods|tree|trees|pine|jungle)\b/) && base !== "forest") add("forest", 4, 8, 18);
+    if (has(/\b(lake|river|pond|bay|harbou?r)\b/) && base !== "water") add("water", 2, 6, 12);
+    if (has(/\b(swamp|marsh|bog|bayou)\b/)) add("swamp", 2, 6, 10);
+    if (has(/\b(desert|dune|sand)\b/) && base !== "desert") add("desert", 3, 10, 18);
+    if (has(/\b(city|town|village|street|market)\b/)) add("city", 2, 5, 9);
+    if (!features.length) { add("forest", 3, 8, 16); add("hills", 2, 8, 12); }
+    const kindOf = (name) => /\b(cabin|house|hospital|school|room|hall|station|shop|inn|tavern|church|tower|lab|office|bar|club)\b/i.test(name) ? "building"
+      : /\b(city)\b/i.test(name) ? "city" : /\b(town)\b/i.test(name) ? "town" : /\b(village|hamlet)\b/i.test(name) ? "village"
+      : /\b(camp|tent)\b/i.test(name) ? "camp" : /\b(lake|river|ridge|mountain|peak|falls|forest|cave|valley|canyon|creek)\b/i.test(name) ? "natural" : "landmark";
+    const places = [];
+    story.places.forEach((bp) => {
+      const same = features.find((f) => (f.type === "water" && /lake|river|pond|bay/i.test(bp.name)) || (f.type === "mountains" && /ridge|mountain|peak/i.test(bp.name)) || (f.type === "forest" && /forest|wood/i.test(bp.name)));
+      let spot = same && !places.some((p) => Math.hypot(p.x - same.x, p.y - same.y) < 10) ? { x: same.x, y: same.y } : null;
+      if (!spot) { let best = null;
+        for (let i = 0; i < 40; i++) { const c = { x: 10 + r() * 80, y: 10 + r() * 80 };
+          const d = Math.min(9999, ...places.map((p) => (p.x - c.x) ** 2 + (p.y - c.y) ** 2));
+          if (!best || d > best.d) best = { x: c.x, y: c.y, d }; }
+        spot = best; }
+      places.push({ name: bp.name, x: Math.round(Math.max(6, Math.min(94, spot.x))), y: Math.round(Math.max(6, Math.min(94, spot.y))), kind: kindOf(bp.name), note: bp.details || "" });
+    });
+    const roads = [];
+    for (let i = 1; i < places.length; i++) {   // join each place to its nearest earlier one
+      let near = 0, nd = Infinity;
+      for (let j = 0; j < i; j++) { const d = Math.hypot(places[i].x - places[j].x, places[i].y - places[j].y); if (d < nd) { nd = d; near = j; } }
+      roads.push([places[i].name, places[near].name]);
+    }
+    return { name: story.title || "World map", scale: "", base, features, places, roads, drawnBy: "page" };
+  }
+  async function generateMap() {
+    $("mapErr").textContent = "";
+    if (!sample) { $("mapErr").textContent = "Start the offline AI first: Settings, then Offline AI."; return; }
+    if (!story.premise) { $("mapErr").textContent = "Start a story first, so there's a world to map."; return; }
+    if (!sample) { story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length }); persist(); $("mapEmpty").hidden = true; $("mapCanvas").hidden = false; renderMapMeta(); drawMap(); $("mapErr").textContent = "The offline AI isn't running, so this map was drawn from your story's places."; return; }
+    const ctl = new AbortController(); mapBusy = ctl;
+    $("mapBtn").disabled = true; $("mapAiBtn").disabled = true; $("mapAiBtn").textContent = "AI is designing..."; $("mapStop").hidden = false;
+    $("mapSub").textContent = "The AI is laying out the world. On a phone this can take a few minutes.";
+    try {
+      const m = await sample.json(mapPrompt(), { signal: ctl.signal, schema: MAP_SCHEMA, maxTokens: 1300 });
+      if (!m || !Array.isArray(m.places) || !Array.isArray(m.features)) throw { code: "invalid_json" };
+      repairMap(m);
+      m.seed = Math.floor(Math.random() * 1e9);
+      m.atPart = story.turns.length;
+      story.map = m;
+      persist();
+      $("mapEmpty").hidden = true; $("mapCanvas").hidden = false;
+      drawMap();
+    } catch (e) {
+      if (!(e && e.code)) console.error(e);
+      if (e && e.code !== "cancelled") {
+        console.warn("AI map failed:", e);
+        story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length });
+        persist(); $("mapEmpty").hidden = true; $("mapCanvas").hidden = false; drawMap();
+        $("mapErr").textContent = "The AI couldn't lay this one out, so it was drawn from your story's places. Press Redraw to let the AI try again.";
+      }
+    } finally {
+      mapBusy = null; $("mapStop").hidden = true; $("mapBtn").disabled = false; $("mapAiBtn").disabled = false; $("mapAiBtn").textContent = "Let the AI design it"; renderMapMeta();
+    }
+  }
+  function renderMapMeta() {
+    const m = story.map;
+    $("mapTitle").textContent = m && m.name ? m.name : "World map";
+    if (!mapBusy) {
+      $("mapBtn").textContent = m ? "Redraw the map" : "Draw the map";
+      $("mapSub").textContent = m
+        ? (m.scale ? m.scale + ". " : "") + (story.turns.length > (m.atPart || 0) ? "Drawn at part " + m.atPart + "; the story is now at part " + story.turns.length + ", so redraw to add new places." : "Up to date with the story.")
+        : "The AI draws a map from the places in your story.";
+    }
+    $("mapEmpty").hidden = !!m; $("mapCanvas").hidden = !m;
+    if (!m) { $("placeList").innerHTML = '<span class="empty">No places mapped yet.</span>'; $("legend").innerHTML = ""; $("placeCard").innerHTML = '<span class="hint">Tap a place on the map to see what the story knows about it.</span>'; }
+  }
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+  function makeNoise(seed) {
+    const r = rng(seed), N = 64, g = new Float32Array(N * N);
+    for (let i = 0; i < g.length; i++) g[i] = r();
+    const at = (x, y) => g[((y % N + N) % N) * N + ((x % N + N) % N)];
+    const sm = (t) => t * t * (3 - 2 * t);
+    const v = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi);
+      const a = at(xi, yi), b = at(xi + 1, yi), c = at(xi, yi + 1), d = at(xi + 1, yi + 1);
+      return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf; };
+    return (x, y) => { let s = 0, amp = .5, f = 1; for (let o = 0; o < 4; o++) { s += v(x * f, y * f) * amp; amp /= 2; f *= 2; } return s; };
+  }
+  function drawMap() {
+    const m = story.map, cv = $("mapCanvas");
+    if (!m || cv.hidden) return;
+    const W = 1200, H = 900; cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    const u = Math.max(1, Math.min(1.7, (W / Math.max(1, cv.getBoundingClientRect().width)) * 0.45));
+    const noise =makeNoise(m.seed || 1), noise2 = makeNoise((m.seed || 1) + 99);
+    const feats = (m.features || []).filter((f) => BIOMES[f.type]).map((f) => ({ t: f.type, x: +f.x || 50, y: +f.y || 50, r: Math.max(2, Math.min(60, +f.r || 10)), label: f.label }));
+    const base = BIOMES[m.base] ? m.base : "plains";
+    // terrain at low resolution, then scaled up
+    const LW = 400, LH = 300, img = ctx.createImageData(LW, LH), grid = new Array(LW * LH);
+    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+      const ux = x / LW * 100, uy = y / LH * 75 * (100 / 75);
+      const px = x / LW * 100, py = y / LH * 100;
+      let b = base;
+      const wob = (noise(x / 38, y / 38) - .5) * 0.9 + (noise2(x / 12, y / 12) - .5) * 0.35;
+      for (const f of feats) {
+        const dx = px - f.x, dy = (py - f.y) * 0.75;
+        const d = Math.sqrt(dx * dx + dy * dy) / f.r;
+        if (d + wob * (f.t === "building" || f.t === "city" ? .15 : 1) < 1) b = f.t;
+      }
+      grid[y * LW + x] = b;
+      const col = BIOMES[b].c, shade = 0.9 + noise2(x / 6, y / 6) * 0.2;
+      const i = (y * LW + x) * 4;
+      img.data[i] = col[0] * shade; img.data[i + 1] = col[1] * shade; img.data[i + 2] = col[2] * shade; img.data[i + 3] = 255;
+    }
+    // coast and edge darkening
+    for (let y = 1; y < LH - 1; y++) for (let x = 1; x < LW - 1; x++) {
+      const b = grid[y * LW + x];
+      if (b !== grid[y * LW + x + 1] || b !== grid[(y + 1) * LW + x]) {
+        const i = (y * LW + x) * 4, k = b === "water" || grid[y * LW + x + 1] === "water" || grid[(y + 1) * LW + x] === "water" ? .62 : .82;
+        img.data[i] *= k; img.data[i + 1] *= k; img.data[i + 2] *= k;
+      }
+    }
+    const off = document.createElement("canvas"); off.width = LW; off.height = LH; off.getContext("2d").putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, W, H);
+    // terrain glyphs
+    const r = rng(m.seed || 7), sx = W / LW, sy = H / LH;
+    ctx.lineWidth = 1.6;
+    for (let gy = 10; gy < H; gy += 26) for (let gx = 10; gx < W; gx += 26) {
+      const x = gx + (r() - .5) * 16, y = gy + (r() - .5) * 16;
+      const b = grid[Math.min(LH - 1, Math.floor(y / sy)) * LW + Math.min(LW - 1, Math.floor(x / sx))];
+      if (b === "mountains" && r() < .4) { ctx.strokeStyle = "rgba(60,52,44,.75)"; ctx.fillStyle = "rgba(245,242,235,.55)"; ctx.beginPath(); ctx.moveTo(x - 11, y + 7); ctx.lineTo(x, y - 9); ctx.lineTo(x + 11, y + 7); ctx.fill(); ctx.stroke(); }
+      else if (b === "hills" && r() < .5) { ctx.strokeStyle = "rgba(90,74,44,.6)"; ctx.beginPath(); ctx.arc(x, y + 4, 8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+      else if (b === "forest" && r() < .8) { ctx.fillStyle = "rgba(48,78,40,.75)"; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "rgba(70,52,30,.7)"; ctx.fillRect(x - 1, y + 4, 2, 4); }
+      else if (b === "swamp" && r() < .5) { ctx.strokeStyle = "rgba(50,70,50,.7)"; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x - 3, y - 5); ctx.lineTo(x - 3, y); ctx.moveTo(x + 2, y - 7); ctx.lineTo(x + 2, y); ctx.stroke(); }
+      else if (b === "water" && r() < .18) { ctx.strokeStyle = "rgba(240,248,252,.45)"; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.quadraticCurveTo(x - 3, y - 4, x, y); ctx.quadraticCurveTo(x + 3, y + 4, x + 7, y); ctx.stroke(); }
+      else if (b === "desert" && r() < .25) { ctx.strokeStyle = "rgba(150,120,60,.5)"; ctx.beginPath(); ctx.arc(x, y + 6, 9, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke(); }
+      else if (b === "city" && r() < .6) { ctx.fillStyle = "rgba(110,84,60,.75)"; ctx.fillRect(x - 4, y - 4, 8, 7); ctx.beginPath(); ctx.moveTo(x - 5, y - 4); ctx.lineTo(x, y - 9); ctx.lineTo(x + 5, y - 4); ctx.fill(); }
+    }
+    const P = (p) => [Math.max(4, Math.min(96, +p.x || 50)) / 100 * W, Math.max(4, Math.min(96, +p.y || 50)) / 100 * H];
+    const byName = {}; (m.places || []).forEach((p) => { if (p && p.name) byName[String(p.name).toLowerCase()] = p; });
+    // roads
+    ctx.setLineDash([10, 7]); ctx.lineWidth = 3; ctx.strokeStyle = "rgba(110,70,35,.75)";
+    (m.roads || []).forEach((pair) => {
+      if (!Array.isArray(pair)) return;
+      const a = byName[String(pair[0]).toLowerCase()], b = byName[String(pair[1]).toLowerCase()];
+      if (!a || !b) return;
+      const [x1, y1] = P(a), [x2, y2] = P(b), mx = (x1 + x2) / 2 + (r() - .5) * 80, my = (y1 + y2) / 2 + (r() - .5) * 80;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx, my, x2, y2); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    // feature labels
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    feats.forEach((f) => { if (!f.label) return;
+      ctx.font = "italic 600 " + Math.round(Math.min(34, 18 + f.r * .35) * u) + "px 'Iowan Old Style', Georgia, serif";
+      ctx.fillStyle = f.t === "water" ? "rgba(30,60,90,.75)" : "rgba(50,40,28,.7)";
+      ctx.fillText(String(f.label), f.x / 100 * W, f.y / 100 * H);
+    });
+    // places
+    mapHits = [];
+    (m.places || []).forEach((p) => {
+      if (!p || !p.name) return;
+      const [x, y] = P(p), kind = String(p.kind || "town");
+      ctx.save(); ctx.translate(x, y); ctx.scale(u, u); ctx.translate(-x, -y);
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#2b2118"; ctx.fillStyle = "#f4ead2";
+      ctx.beginPath();
+      if (kind === "building" || kind === "room") ctx.rect(x - 9, y - 9, 18, 18);
+      else if (kind === "landmark" || kind === "natural") { ctx.moveTo(x, y - 12); ctx.lineTo(x + 11, y + 8); ctx.lineTo(x - 11, y + 8); ctx.closePath(); }
+      else if (kind === "camp") { ctx.moveTo(x - 10, y + 8); ctx.lineTo(x, y - 10); ctx.lineTo(x + 10, y + 8); ctx.closePath(); }
+      else ctx.arc(x, y, kind === "city" ? 12 : kind === "village" ? 7 : 9, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      if (kind === "city") { ctx.fillStyle = "#2b2118"; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      ctx.font = "600 " + Math.round(24 * u) + "px Manrope, 'Segoe UI', sans-serif";
+      const ly = y > H - 60 * u ? y - 28 * u : y + 28 * u;
+      const tw = ctx.measureText(p.name).width / 2 + 14, lx = Math.max(tw, Math.min(W - tw, x));
+      ctx.lineWidth = 5 * u; ctx.strokeStyle = "rgba(250,244,228,.92)"; ctx.strokeText(p.name, lx, ly);
+      ctx.fillStyle = "#231a12"; ctx.fillText(p.name, lx, ly);
+      mapHits.push({ x, y, p });
+    });
+    // frame, compass, scale
+    ctx.lineWidth = 10; ctx.strokeStyle = "rgba(60,45,30,.55)"; ctx.strokeRect(5, 5, W - 10, H - 10);
+    const cx = W - 70, cy = 80;
+    ctx.fillStyle = "rgba(250,244,228,.85)"; ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3a2c1e"; ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx + 9, cy); ctx.lineTo(cx, cy + 30); ctx.lineTo(cx - 9, cy); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#f4ead2"; ctx.beginPath(); ctx.moveTo(cx, cy + 30); ctx.lineTo(cx + 9, cy); ctx.lineTo(cx - 9, cy); ctx.closePath(); ctx.fill();
+    ctx.font = "700 20px Manrope, sans-serif"; ctx.fillStyle = "#3a2c1e"; ctx.fillText("N", cx, cy - 46 < 14 ? 16 : cy - 46);
+    if (m.scale) { ctx.textAlign = "left"; ctx.font = "italic 20px 'Iowan Old Style', Georgia, serif"; ctx.lineWidth = 4; ctx.strokeStyle = "rgba(250,244,228,.9)"; ctx.strokeText(String(m.scale), 26, H - 28); ctx.fillStyle = "#3a2c1e"; ctx.fillText(String(m.scale), 26, H - 28); }
+    renderPlaceList(); renderLegend(feats.map((f) => f.t).concat(base));
+  }
+  function placeInfo(p) {
+    const card = $("placeCard"); card.innerHTML = "";
+    const k = document.createElement("div"); k.className = "kind"; k.textContent = p.kind || "place";
+    const h = document.createElement("h3"); h.textContent = p.name;
+    const bible = story.places.find((x) => x.name.toLowerCase() === String(p.name).toLowerCase());
+    const d = document.createElement("div"); d.textContent = (bible && bible.details) || p.note || "The story hasn't said much about this place yet.";
+    card.append(k, h, d);
+    if (bible && p.note && bible.details !== p.note) { const n = document.createElement("div"); n.className = "hint"; n.style.marginTop = "6px"; n.textContent = p.note; card.append(n); }
+  }
+  function renderPlaceList() {
+    const box = $("placeList"); box.innerHTML = "";
+    (story.map.places || []).forEach((p) => { if (!p || !p.name) return;
+      const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = p.name;
+      b.addEventListener("click", () => placeInfo(p)); box.append(b); });
+  }
+  function renderLegend(types) {
+    const box = $("legend"); box.innerHTML = "";
+    [...new Set(types)].forEach((t) => { const s = document.createElement("span"); const i = document.createElement("i");
+      i.style.background = "rgb(" + BIOMES[t].c.join(",") + ")"; s.append(i, document.createTextNode(BIOMES[t].label)); box.append(s); });
+  }
+  $("mapCanvas").addEventListener("click", (e) => {
+    const cv = $("mapCanvas"), rect = cv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * cv.width, y = (e.clientY - rect.top) / rect.height * cv.height;
+    const rad = Math.max(40, 24 * cv.width / rect.width);
+    let best = null, bd = rad * rad;
+    mapHits.forEach((h) => { const d = (h.x - x) ** 2 + (h.y - y) ** 2; if (d < bd) { bd = d; best = h; } });
+    if (best) placeInfo(best.p);
+  });
+  function quickMap() {
+    $("mapErr").textContent = "";
+    if (!story.premise) { $("mapErr").textContent = "Start a story first, so there's a world to map."; return; }
+    story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length });
+    persist();
+    renderMapMeta();
+    drawMap();
+  }
+  $("mapBtn").addEventListener("click", quickMap);
+  $("mapAiBtn").addEventListener("click", generateMap);
+  $("mapStop").addEventListener("click", () => { if (mapBusy) mapBusy.abort(); });
+
+  if (synth) { loadVoices(); synth.addEventListener ? synth.addEventListener("voiceschanged", loadVoices) : (synth.onvoiceschanged = loadVoices); }
+  else loadVoices();
+
+  // restore the story open last time, from this browser
+  const lastId = safeLS(() => localStorage.getItem("storyai.current"), null);
+  if (lastId) { const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {}); if (all[lastId]) story = Object.assign(blankStory(), all[lastId]); }
+  applyTheme();
+  renderAll();
+  showView(location.hash.slice(1));
+
+  // ---------- the offline AI: download once, then run on this device ----------
+  const WEBLLM_URL = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/lib/index.js";
+  const MODELS = [
+    { key: "small", name: "Quick: Llama 3.2 1B", f16: "Llama-3.2-1B-Instruct-q4f16_1-MLC", f32: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
+      size: "About a 0.7 GB download.", fit: "Works on most recent iPhones. Simplest writing." },
+    { key: "medium", name: "Better: Gemma 2 2B", f16: "gemma-2-2b-it-q4f16_1-MLC", f32: "gemma-2-2b-it-q4f32_1-MLC",
+      size: "About a 1.5 GB download.", fit: "Needs an iPhone 15 Pro or newer, or a PC." },
+    { key: "large", name: "Best: Hermes 3 (3B)", f16: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", f32: "Hermes-3-Llama-3.2-3B-q4f32_1-MLC",
+      size: "About a 1.8 GB download.", fit: "Best on a PC. On iPhone, only the newest Pro models have enough memory." }
+  ];
+  const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let webllm = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
+
+  function chosenModel() { return MODELS.find((m) => m.key === $("modelSel").value) || MODELS[0]; }
+  function modelId(m) { return hasF16 ? m.f16 : m.f32; }
+  function aiStatus(text, kind) { const s = $("aiStatus"); s.textContent = text; s.className = "ai-status" + (kind ? " " + kind : ""); }
+  function showBanner(text) {
+    $("noClaudeText").textContent = text;
+    $("noClaude").hidden = !text;
+  }
+  async function checkGPU() {
+    if (gpuOk !== null) return gpuOk;
+    if (!navigator.gpu) return (gpuOk = false);
+    try {
+      const a = await navigator.gpu.requestAdapter();
+      if (!a) return (gpuOk = false);
+      hasF16 = a.features.has("shader-f16");
+      return (gpuOk = true);
+    } catch (e) { return (gpuOk = false); }
+  }
+  async function loadLib() {
+    if (!webllm) webllm = await import(WEBLLM_URL);
+    return webllm;
+  }
+  async function storageNote() {
+    try {
+      const est = await navigator.storage.estimate();
+      return " Using " + (est.usage / 1e9).toFixed(1) + " GB of storage on this device.";
+    } catch (e) { return ""; }
+  }
+  async function renderModelInfo() {
+    const m = chosenModel();
+    let cached = false;
+    try { if (gpuOk) cached = await (await loadLib()).hasModelInCache(modelId(m)); } catch (e) { /* offline before the library was saved */ }
+    $("modelInfo").textContent = m.fit + " " + (cached ? "Already downloaded." : m.size);
+    $("loadBtn").textContent = engine && prefs.model === m.key ? "Running" : cached ? "Start" : "Download and start";
+    $("loadBtn").disabled = loadingModel || !gpuOk || (engine && prefs.model === m.key);
+    $("deleteModelBtn").hidden = !cached;
+    return cached;
+  }
+  function friendlyLoadError(e) {
+    const msg = String((e && e.message) || e || "");
+    if (/memory|OOM|out of|allocation|device (was )?lost|exceeds/i.test(msg)) return "This device ran out of memory for that model. Pick a smaller one.";
+    if (!navigator.onLine || /fetch|network|Failed to load|NetworkError/i.test(msg)) return "This model isn't downloaded yet, and there's no internet. Connect to wifi once to download it.";
+    return "Couldn't start the AI: " + msg.slice(0, 160);
+  }
+  async function loadModel() {
+    if (loadingModel) return;
+    const m = chosenModel();
+    if (!(await checkGPU())) { aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
+    loadingModel = true;
+    $("loadBtn").disabled = true; $("modelSel").disabled = true;
+    $("loadProg").hidden = false; $("loadProg").value = 0;
+    aiStatus("Getting ready...");
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* not offered here */ }
+    try {
+      const lib = await loadLib();
+      if (engine) { try { await engine.unload(); } catch (e) { /* already gone */ } engine = null; sample = null; }
+      const id = modelId(m);
+      const cfg = { initProgressCallback: (p) => {
+        $("loadProg").value = p.progress || 0;
+        const fetching = /Fetching|Loading model from cache|Loading GPU/i.test(p.text || "");
+        aiStatus(fetching ? (p.text || "").replace(/\s*It can take a while.*$/i, "") : (p.text || "Loading..."));
+      } };
+      try {
+        const worker = new Worker(new URL("llm-worker.js", location.href), { type: "module" });
+        engine = await lib.CreateWebWorkerMLCEngine(worker, id, cfg);
+      } catch (err) {
+        if (!/WebGPU is not supported|Worker|module/i.test(String(err && err.message))) throw err;
+        engine = await lib.CreateMLCEngine(id, cfg);
+      }
+      sample = makeSample();
+      prefs.model = m.key; savePrefs();
+      aiStatus("Ready. " + m.name.split(":")[0] + " model is running on this device, with no internet needed." + (await storageNote()), "ok");
+      showBanner("");
+    } catch (e) {
+      console.error(e);
+      engine = null; sample = null;
+      aiStatus(friendlyLoadError(e), "bad");
+      showBanner("The offline AI isn't running yet.");
+    } finally {
+      loadingModel = false;
+      $("loadProg").hidden = true; $("modelSel").disabled = false;
+      renderModelInfo();
+    }
+  }
+  async function deleteModel() {
+    const m = chosenModel();
+    if (!(await confirmBox("Delete the downloaded " + m.name.split(": ")[1] + " model? You'd need wifi to download it again."))) return;
+    try {
+      if (engine && prefs.model === m.key) { try { await engine.unload(); } catch (e) { /* already gone */ } engine = null; sample = null; showBanner("The offline AI isn't running yet."); }
+      await (await loadLib()).deleteModelAllInfoInCache(modelId(m));
+      aiStatus("Deleted." + (await storageNote()));
+    } catch (e) { aiStatus("Couldn't delete it: " + String((e && e.message) || e).slice(0, 120), "bad"); }
+    renderModelInfo();
+  }
+
+  MODELS.forEach((m) => { const o = document.createElement("option"); o.value = m.key; o.textContent = m.name; $("modelSel").append(o); });
+  $("modelSel").value = prefs.model || (isPhone ? "small" : "large");
+  $("modelSel").addEventListener("change", renderModelInfo);
+  $("loadBtn").addEventListener("click", loadModel);
+  $("deleteModelBtn").addEventListener("click", deleteModel);
+  $("setupAiBtn").addEventListener("click", () => {
+    showView("settings");
+    try { history.replaceState(null, "", "#settings"); } catch (e) { /* no address bar */ }
+    $("aiSection").scrollIntoView({ block: "start" });
+    $("loadBtn").focus();
+  });
+  showBanner("The offline AI isn't running yet.");
+
+  (async () => {
+    if (!(await checkGPU())) {
+      aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad");
+      showBanner("This browser can't run the offline AI.");
+      $("loadBtn").disabled = true;
+      return;
+    }
+    const cached = await renderModelInfo();
+    if (prefs.model && cached) loadModel();               // start the model you used last time
+    else aiStatus("Not downloaded yet. Connect to wifi, then press Download and start.");
+  })();
+
+  // ---------- backups (stories live only on this device) ----------
+  $("backupBtn").addEventListener("click", () => {
+    const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+    const blob = new Blob([JSON.stringify({ app: "story-ai", version: 1, saved: new Date().toISOString(), stories: all }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "story-ai-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $("backupMsg").textContent = Object.keys(all).length + " stories saved to a file.";
+  });
+  $("restoreFile").addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const incoming = data && data.stories;
+      if (!incoming || typeof incoming !== "object") throw new Error("not a Story AI backup");
+      const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {});
+      let n = 0;
+      Object.values(incoming).forEach((s) => { if (s && s.id && Array.isArray(s.turns)) { if (!all[s.id] || (s.updated || 0) >= (all[s.id].updated || 0)) { all[s.id] = s; n++; } } });
+      safeLS(() => localStorage.setItem(LS_KEY, JSON.stringify(all)));
+      $("backupMsg").textContent = "Restored " + n + " stor" + (n === 1 ? "y" : "ies") + ".";
+      openSaved();
+    } catch (err) { $("backupMsg").textContent = "That file isn't a Story AI backup."; }
+    e.target.value = "";
+  });
+
+  // iPhone only allows speech after a tap, so unlock it on the first one
+  document.addEventListener("pointerdown", function unlock() {
+    document.removeEventListener("pointerdown", unlock);
+    try { if (synth) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; synth.speak(u); } } catch (e) { /* no speech here */ }
+  });
+
+  // keep the app itself available offline
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* runs without offline caching */ });
+  }
+})();
+</script>
+</body>
+</html>
