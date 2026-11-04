@@ -217,6 +217,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   .entry.fresh { transition: border-color 1.5s; }
 }
+/* Timeline of story beats */
+.beats { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 13px; }
+.beats li { padding-left: 2px; }
+.beats li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.beats li span { margin-right: 4px; }
+.beats li .x { font-size: 14px; vertical-align: -1px; }
+.beats li.empty { list-style: none; margin-left: -22px; }
 /* Offline AI panel */
 progress { width: 100%; height: 8px; accent-color: var(--accent); margin-top: 10px; }
 progress[hidden] { display: none; }
@@ -365,6 +372,11 @@ progress[hidden] { display: none; }
         <h2>Places <button class="btn small ghost" id="addPlace" type="button">+ Add</button></h2>
         <div class="entries" id="places"></div>
       </div>
+      <div class="section">
+        <h2>Story so far</h2>
+        <div class="hint" id="sceneNow" style="margin-bottom:8px"></div>
+        <ol class="beats" id="beats"></ol>
+      </div>
       <p class="hint">The AI updates these after every part. You can edit them, and your changes become fact in the story.</p>
     </aside>
   </div>
@@ -488,7 +500,7 @@ progress[hidden] { display: none; }
   function storySoFar(maxChars) {
     const parts = [];
     story.turns.forEach((t, i) => {
-      if (t.direction) parts.push("[Reader's direction: " + t.direction + "]");
+      if (t.direction) parts.push("[Reader's direction: " + t.direction + (t.outcome ? " | What happened: " + t.outcome : "") + "]");
       parts.push(t.paragraphs.join("\n\n"));
     });
     let text = parts.join("\n\n");
@@ -547,31 +559,86 @@ progress[hidden] { display: none; }
     if (out.length > maxChars) out = out.slice(0, maxChars) + "\n(...)";
     return out;
   }
-  function storyPrompt(direction) {
-    const n = prefs.paras, r = prefs.realism, b = band(r);
+  function sceneText() {
+    const s = story.scene;
+    if (!s || !s.where) return "";
+    return "Right now: " + (s.who ? s.who + " " : "") + "at " + s.where +
+      (s.came_from ? ", having come from " + s.came_from : "") +
+      (s.heading_to ? ", heading to " + s.heading_to : "") + ".";
+  }
+  function beatsText(max) {
+    const beats = story.turns.map((t) => t.beat).filter(Boolean);
+    if (!beats.length) return "";
+    const start = Math.max(0, beats.length - max);
+    return beats.slice(start).map((b, i) => (start + i + 1) + ". " + b).join("\n");
+  }
+  function storyPrompt(direction, plan) {
+    const n = prefs.paras;
     const first = story.turns.length === 0;
     const maxTokens = Math.min(1900, n * 170 + 60);
     const rules = [
       "You are a skilled storyteller writing an interactive story with a reader. Write vivid, natural prose, with dialogue where it fits.",
       "Write only story text: no title, no headings, no lists, no notes, and no questions to the reader.",
-      first ? "" : "REALISM SETTING " + r + "/100 (" + b.name + "). How to treat the reader's direction: " + b.rule,
-      "Judge what is realistic against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
+      "Keep the story moving forward. Never repeat an event, scene or description that already happened; each part must add something new.",
+      "Keep track of where everyone is: characters only move between places by actually travelling, and they remember where they came from.",
       story.style ? "STYLE THE READER WANTS: " + story.style : ""
     ].filter(Boolean).join("\n");
+    const beats = beatsText(14), scene = sceneText();
     const notes = [
       "PREMISE: " + story.premise,
-      "CHARACTERS:\n" + bibleShort(story.characters, 1300),
-      "PLACES:\n" + bibleShort(story.places, 600),
-      story.summary ? "WHAT HAS HAPPENED SO FAR: " + story.summary : ""
+      "CHARACTERS:\n" + bibleShort(story.characters, 1100),
+      "PLACES:\n" + bibleShort(story.places, 500),
+      story.summary ? "SUMMARY: " + story.summary : "",
+      beats ? "EVENTS THAT ALREADY HAPPENED, IN ORDER (do not repeat them):\n" + beats : "",
+      scene ? "CURRENT SCENE: " + scene : ""
     ].filter(Boolean).join("\n\n");
-    const ask = first
-      ? "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at a moment where the reader can decide what happens next."
-      : "READER'S DIRECTION: " + (direction || "(none; continue the story naturally)") + "\n\nContinue the story from exactly where it stopped, applying the realism setting to the reader's direction. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+    let ask;
+    if (first) {
+      ask = "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at a moment where the reader can decide what happens next.";
+    } else if (plan && plan.happens) {
+      ask = "THE READER'S DIRECTION: " + direction + "\n" +
+        "WHAT HAPPENS BECAUSE OF IT (already decided, you must follow this): " + plan.happens + "\n\n" +
+        "Continue the story from exactly where it stopped. Your FIRST paragraph must show this happening, right away. Then write what follows from it. " +
+        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+    } else {
+      ask = "The reader gave no direction. Continue the story from exactly where it stopped with something new happening. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+    }
     const room = CTX - maxTokens - estTokens(rules + notes + ask) - 150;
     const recent = first ? "" : storySoFar(Math.max(500, Math.floor(room * 3.3)));
     const content = rules + "\n\n" + notes + (recent ? "\n\nTHE STORY SO FAR (latest part):\n" + recent : "") + "\n\n" + ask;
     return { messages: [{ role: "user", content }], maxTokens };
   }
+
+  // The referee: decides, before any writing, what the reader's direction actually makes happen.
+  const PLAN_SCHEMA = {
+    type: "object",
+    properties: {
+      verdict: { type: "string", enum: ["accepted", "adjusted", "refused"] },
+      reason: { type: "string" },
+      happens: { type: "string" }
+    },
+    required: ["verdict", "reason", "happens"]
+  };
+  function planPrompt(direction) {
+    const r = prefs.realism, b = band(r);
+    return [
+      "You are the referee of an interactive story. The reader has just told the story what to do next. Decide what actually happens.",
+      "When the reader says \"I\", they mean the main character.",
+      "REALISM SETTING " + r + "/100 (" + b.name + "): " + b.rule,
+      "Judge realism against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
+      "PREMISE: " + story.premise.slice(0, 500),
+      "CHARACTERS:\n" + bibleShort(story.characters, 700),
+      sceneText() ? "CURRENT SCENE: " + sceneText() : "",
+      "LATEST PART OF THE STORY:\n" + storySoFar(1500),
+      "THE READER'S DIRECTION: " + direction,
+      "",
+      "Reply with JSON:",
+      "- verdict: accepted if it happens as the reader asked; adjusted if it only partly works or happens differently; refused if it fails or cannot happen.",
+      "- reason: one short sentence telling the reader why, or an empty string if accepted.",
+      "- happens: one or two sentences saying exactly what happens next because of the direction. The direction must change the story; never ignore it."
+    ].filter((l) => l !== "").join("\n");
+  }
+
   function cleanParas(text, n) {
     return toParas(text.replace(/\*+/g, ""))
       .map((p) => p.replace(/^(paragraph|part)\s*\d+\s*[:.\-]\s*/i, ""))
@@ -583,13 +650,15 @@ progress[hidden] { display: none; }
     type: "object",
     properties: {
       title: { type: "string" },
-      verdict: { type: "string", enum: ["accepted", "adjusted", "refused", "none"] },
-      verdict_note: { type: "string" },
+      beat: { type: "string" },
       summary: { type: "string" },
+      scene: { type: "object", properties: {
+        who: { type: "string" }, where: { type: "string" }, came_from: { type: "string" }, heading_to: { type: "string" }, present: { type: "string" } },
+        required: ["who", "where", "came_from", "heading_to", "present"] },
       characters: { type: "array", items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, details: { type: "string" } }, required: ["name", "role", "details"] } },
       places: { type: "array", items: { type: "object", properties: { name: { type: "string" }, details: { type: "string" } }, required: ["name", "details"] } }
     },
-    required: ["title", "verdict", "verdict_note", "summary", "characters", "places"]
+    required: ["title", "beat", "summary", "scene", "characters", "places"]
   };
   const MAP_SCHEMA = {
     type: "object",
@@ -609,23 +678,22 @@ progress[hidden] { display: none; }
   function notesPrompt(direction, newText) {
     return [
       "You keep the records for an interactive story. Read the records and the newest part of the story, then reply with JSON only.",
-      "PREMISE: " + story.premise.slice(0, 600),
+      "PREMISE: " + story.premise.slice(0, 500),
       "CURRENT TITLE: " + (story.title || "(none yet)"),
       "SUMMARY SO FAR: " + (story.summary || "(the story has just started)"),
-      "KNOWN CHARACTERS:\n" + bibleShort(story.characters, 1300),
-      "KNOWN PLACES:\n" + bibleShort(story.places, 600),
-      direction ? "THE READER ASKED FOR: " + direction : "THE READER GAVE NO DIRECTION THIS TIME.",
-      "NEWEST PART:\n" + newText.slice(-3800),
+      sceneText() ? "SCENE BEFORE THIS PART: " + sceneText() : "",
+      "KNOWN CHARACTERS:\n" + bibleShort(story.characters, 1100),
+      "KNOWN PLACES:\n" + bibleShort(story.places, 500),
+      "NEWEST PART:\n" + newText.slice(-3600),
       "Fill in the JSON:",
       "- title: keep the current title if there is one, otherwise invent a short one.",
-      "- verdict: accepted = what the reader asked for happened as asked; adjusted = it happened only partly or differently; refused = it failed or could not happen; none = the reader asked for nothing.",
-      "- verdict_note: one short sentence explaining the verdict, or empty.",
+      "- beat: the single most important thing that happened in the newest part, in one short sentence (under 20 words).",
       "- summary: the whole story so far in under 120 words, updating the old summary with the newest part.",
+      "- scene: where things stand at the END of the newest part. who = the main character's name; where = where they are now; came_from = the place they were before that; heading_to = where they are trying to go, or empty; present = who else is with them, or empty.",
       "- characters: every named character, keeping the known ones with the same names. role is 2-5 words. details is under 30 words: looks, condition, what they carry, where they are now.",
       "- places: every named place, details under 20 words."
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   }
-
   // ---------- the on-device model, behind the same call shape the page already uses ----------
   let llmQueue = Promise.resolve();
   function runLLM(messages, opts) {
@@ -642,7 +710,7 @@ progress[hidden] { display: none; }
     try {
       const req = { messages, stream: true, max_tokens: maxTokens, temperature, top_p: 0.95 };
       if (schema) req.response_format = { type: "json_object", schema: JSON.stringify(schema) };
-      else req.frequency_penalty = 0.3;
+      else { req.frequency_penalty = 0.4; req.presence_penalty = 0.3; }
       const stream = await engine.chat.completions.create(req);
       for await (const chunk of stream) {
         const c = chunk.choices && chunk.choices[0];
@@ -685,23 +753,43 @@ progress[hidden] { display: none; }
     try {
       $("contHint").textContent = "Finishing the notes...";
       await notesPending;
-      $("contHint").textContent = "Writing...";
       const live = document.createElement("div");
       live.className = "live";
       if (direction) live.append(directionEl({ direction }));
       const thinking = document.createElement("p");
       thinking.className = "thinking";
-      thinking.textContent = "Thinking about what happens next...";
+      thinking.textContent = direction ? "Deciding what your direction makes happen..." : "Thinking about what happens next...";
       live.append(thinking);
       $("storyView").hidden = false;
       $("storyView").append(live);
       scrollDown();
-      const { messages, maxTokens } = storyPrompt(direction);
-      let res;
+      let res, plan = null;
       try {
+        // 1. referee: turn the reader's direction into a definite outcome
+        if (direction && story.turns.length) {
+          $("contHint").textContent = "Applying your direction...";
+          try {
+            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: PLAN_SCHEMA, maxTokens: 220, temperature: 0.3 });
+            if (!plan || typeof plan.happens !== "string" || !plan.happens.trim()) plan = null;
+          } catch (e) {
+            if (e && e.code === "cancelled") throw e;
+            plan = null;
+          }
+          if (!plan) plan = { verdict: "", reason: "", happens: direction };   // fall back to the reader's own words
+          const pending = { direction, verdict: plan.verdict, note: plan.reason };
+          live.firstChild.replaceWith(directionEl(pending));
+          thinking.textContent = "Writing...";
+        }
+        // 2. write the part
+        $("contHint").textContent = "Writing...";
+        const { messages, maxTokens } = storyPrompt(direction, plan);
         res = await sample(messages, {
-          signal: ctl.signal, maxTokens, temperature: 0.85,
-          onText: ({ text }) => { renderLiveParas(live, cleanParas(text, prefs.paras), direction); scrollDown(true); }
+          signal: ctl.signal, maxTokens, temperature: 0.8,
+          onText: ({ text }) => {
+            renderLiveParas(live, cleanParas(text, prefs.paras), direction);
+            if (plan && live.firstChild) live.firstChild.replaceWith(directionEl({ direction, verdict: plan.verdict, note: plan.reason }));
+            scrollDown(true);
+          }
         });
       } finally { live.remove(); }
       const paragraphs = cleanParas(res.text, prefs.paras);
@@ -710,7 +798,10 @@ progress[hidden] { display: none; }
         if (m && m[0].length > 40) paragraphs[paragraphs.length - 1] = m[0];
       }
       if (!paragraphs.length) throw { code: "empty_completion" };
-      const turn = { direction: direction || "", paragraphs, verdict: "", note: "" };
+      const turn = { direction: direction || "", paragraphs,
+        verdict: plan && ["accepted", "adjusted", "refused"].includes(plan.verdict) ? plan.verdict : "",
+        note: plan && plan.verdict !== "accepted" && typeof plan.reason === "string" ? plan.reason.trim().slice(0, 240) : "",
+        outcome: plan ? String(plan.happens || "").slice(0, 300) : "" };
       story.turns.push(turn);
       story.updated = Date.now();
       renderStory();
@@ -737,24 +828,46 @@ progress[hidden] { display: none; }
     if (!busy) $("contHint").textContent = hintText();
     try {
       const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1000, temperature: 0.3 });
-      if (turn.direction) {
-        if (["accepted", "adjusted", "refused"].includes(meta.verdict)) turn.verdict = meta.verdict;
-        if (typeof meta.verdict_note === "string") turn.note = meta.verdict_note.trim().slice(0, 240);
-      }
+      if (!story.turns.includes(turn)) return;   // the part was undone meanwhile
+      if (typeof meta.beat === "string" && meta.beat.trim()) turn.beat = meta.beat.trim().slice(0, 200);
       if (meta.title && !story.title) story.title = String(meta.title).slice(0, 80);
       if (typeof meta.summary === "string" && meta.summary.trim()) story.summary = meta.summary.trim().slice(0, 1200);
+      if (meta.scene && typeof meta.scene === "object" && meta.scene.where) {
+        const s = {};
+        ["who", "where", "came_from", "heading_to", "present"].forEach((k) => { s[k] = String(meta.scene[k] || "").trim().slice(0, 80); });
+        story.scene = s;
+      }
       story.characters = mergeList(story.characters, meta.characters);
       story.places = mergeList(story.places, meta.places);
-      if (story.turns.includes(turn)) {
-        if (!busy) renderStory();
-        renderBible(); renderCharacters(); renderMapMeta(); persist();
-      }
+      if (!busy) renderStory();
+      renderBible(); renderCharacters(); renderMapMeta(); persist();
     } catch (e) {
       console.warn("Notes not updated:", e); // the story part is kept; the notes just weren't updated this time
     } finally {
       notesBusy = false;
       if (!busy) $("contHint").textContent = hintText();
     }
+  }
+  function renderBeats() {
+    const box = $("beats");
+    if (!box) return;
+    box.innerHTML = "";
+    const s = story.scene;
+    $("sceneNow").textContent = s && s.where
+      ? "Now: " + (s.who ? s.who + " at " : "") + s.where + (s.came_from ? " (from " + s.came_from + ")" : "") + (s.heading_to ? ", heading to " + s.heading_to : "") + (s.present ? ". With: " + s.present : "")
+      : "";
+    const items = story.turns.map((t, i) => ({ t, i })).filter((x) => x.t.beat);
+    if (!items.length) { const e = document.createElement("li"); e.className = "empty"; e.textContent = "Key events appear here after each part."; box.append(e); return; }
+    items.forEach(({ t, i }) => {
+      const li = document.createElement("li");
+      const txt = document.createElement("span"); txt.textContent = t.beat;
+      const del = document.createElement("button"); del.className = "x"; del.type = "button"; del.textContent = "×";
+      del.setAttribute("aria-label", "Forget this event");
+      del.addEventListener("click", () => { delete t.beat; renderBeats(); queueSave(); });
+      li.value = i + 1;
+      li.append(txt, del);
+      box.append(li);
+    });
   }
   function renderLiveParas(live, paras, direction) {
     live.innerHTML = "";
@@ -822,6 +935,7 @@ progress[hidden] { display: none; }
   function renderBible() {
     renderEntries($("chars"), story.characters, "No characters yet. They appear here as the story introduces them.");
     renderEntries($("places"), story.places, "No places yet.");
+    renderBeats();
   }
   function renderEntries(box, list, emptyText) {
     box.innerHTML = "";
