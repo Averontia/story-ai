@@ -345,6 +345,18 @@ progress[hidden] { display: none; }
           <div class="scale"><span>0 · anything goes</span><span>100 · strict</span></div>
         </div>
         <div class="realism-desc" id="realismDesc"></div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="drive">Who drives the story</label><output id="driveOut">40</output></div>
+          <input type="range" id="drive" min="0" max="100" step="5" value="40">
+          <div class="scale"><span>0 · you lead</span><span>100 · the AI leads</span></div>
+        </div>
+        <div class="realism-desc" id="driveDesc"></div>
+        <div class="slider-row">
+          <div class="slider-head"><label for="pace">Pace</label><output id="paceOut">50</output></div>
+          <input type="range" id="pace" min="0" max="100" step="5" value="50">
+          <div class="scale"><span>0 · slow, detailed</span><span>100 · fast, plot only</span></div>
+        </div>
+        <div class="realism-desc" id="paceDesc"></div>
       </div>
 
       <div class="section">
@@ -469,7 +481,7 @@ progress[hidden] { display: none; }
   }
   function safeLS(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function loadPrefs() {
-    return Object.assign({ paras: 3, realism: 60, voice: false, voiceName: "", rate: 1, theme: "auto" },
+    return Object.assign({ paras: 3, realism: 60, drive: 40, pace: 50, voice: false, voiceName: "", rate: 1, theme: "auto" },
       safeLS(() => JSON.parse(localStorage.getItem(LS_PREFS)) || {}, {}));
   }
   function savePrefs() { safeLS(() => localStorage.setItem(LS_PREFS, JSON.stringify(prefs))); }
@@ -494,7 +506,39 @@ progress[hidden] { display: none; }
     $("realismDesc").innerHTML = "";
     const strong = document.createElement("b"); strong.textContent = b.name + ". ";
     $("realismDesc").append(strong, document.createTextNode(b.reader));
+    [["drive", DRIVE_BANDS], ["pace", PACE_BANDS]].forEach(([k, list]) => {
+      const v = prefs[k], d = pick(list, v);
+      $(k + "Out").textContent = v;
+      $(k + "Desc").innerHTML = "";
+      const s = document.createElement("b"); s.textContent = d.name + ". ";
+      $(k + "Desc").append(s, document.createTextNode(d.reader));
+    });
   }
+
+  // ---------- who drives the story, and how fast it moves ----------
+  const DRIVE_BANDS = [
+    { max: 20, name: "You lead", reader: "The AI only carries on what is already happening and how people react. It stops and waits for you at every choice.",
+      rule: "The reader is in charge. Only carry on what is already happening and show how others react. Do not bring in big new events, characters or twists, and never make important decisions for the main character; stop as soon as a choice comes up." },
+    { max: 50, name: "Shared", reader: "The AI keeps things moving with small events and lets other characters act, but leaves the big choices to you.",
+      rule: "Keep the story moving with small new events, and let other characters act on their own goals. Leave the main character's important decisions to the reader." },
+    { max: 80, name: "AI leads", reader: "The AI pushes the plot: new problems, twists and people show up, and the main character makes everyday choices on their own.",
+      rule: "Push the plot forward actively: bring in new problems, discoveries, twists or characters, and let the main character make ordinary decisions and act on them. Leave only the biggest choices to the reader." },
+    { max: 100, name: "AI is the author", reader: "The AI writes it like a novel and makes every decision itself. Your directions are still followed when you give them.",
+      rule: "You are the author. Decide everything that happens, including the main character's choices, and drive the plot toward its next big moment. Every part needs conflict and change." }
+  ];
+  const PACE_BANDS = [
+    { max: 20, name: "Slow", reader: "Moment by moment, rich in detail: sights, sounds, thoughts and small actions.",
+      rule: "Slow pace: show events moment by moment with rich detail, thoughts and dialogue. Even so, every paragraph must add something new; never describe the same thing twice." },
+    { max: 50, name: "Steady", reader: "A balance of description and events.",
+      rule: "Steady pace: balance description with events. Describe a place or person once, briefly, then keep things happening." },
+    { max: 80, name: "Quick", reader: "Gets to the next plot point fast. Short descriptions, skips the boring stretches.",
+      rule: "Quick pace: reach the next important event fast. Keep descriptions to a few words, skip travel, waiting and small talk, and use short time skips (\"An hour later...\")." },
+    { max: 100, name: "Rapid", reader: "Jumps from plot point to plot point, skipping hours or days. Several things happen in each part.",
+      rule: "Rapid pace: jump from plot point to plot point. Each paragraph covers a new event, skipping hours or days when needed. Almost no description; sum up anything that isn't a key moment in a sentence." }
+  ];
+  function pick(list, v) { return list.find((b) => v <= b.max) || list[list.length - 1]; }
+  function driveRule() { return "WHO DRIVES THE STORY " + prefs.drive + "/100 (" + pick(DRIVE_BANDS, prefs.drive).name + "): " + pick(DRIVE_BANDS, prefs.drive).rule; }
+  function paceRule() { return "PACE " + prefs.pace + "/100 (" + pick(PACE_BANDS, prefs.pace).name + "): " + pick(PACE_BANDS, prefs.pace).rule; }
 
   // ---------- prompt ----------
   function storySoFar(maxChars) {
@@ -581,6 +625,9 @@ progress[hidden] { display: none; }
       "Write only story text: no title, no headings, no lists, no notes, and no questions to the reader.",
       "Keep the story moving forward. Never repeat an event, scene or description that already happened; each part must add something new.",
       "Keep track of where everyone is: characters only move between places by actually travelling, and they remember where they came from.",
+      "Never describe again a place, person or object that was already described; refer to it in a few words. Never stall: something must change in every paragraph.",
+      driveRule(),
+      paceRule(),
       story.style ? "STYLE THE READER WANTS: " + story.style : ""
     ].filter(Boolean).join("\n");
     const beats = beatsText(14), scene = sceneText();
@@ -600,6 +647,10 @@ progress[hidden] { display: none; }
         "WHAT HAPPENS BECAUSE OF IT (already decided, you must follow this): " + plan.happens + "\n\n" +
         "Continue the story from exactly where it stopped. Your FIRST paragraph must show this happening, right away. Then write what follows from it. " +
         "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+    } else if (plan && plan.next) {
+      ask = "WHAT HAPPENS NEXT (already decided, you must follow this): " + plan.next + "\n\n" +
+        "Continue the story from exactly where it stopped. Get to this quickly and show it happening, then write what follows from it. " +
+        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop" + (prefs.drive <= 50 ? " at a moment where the reader can decide what happens next." : " at a point that leaves the reader wanting more.");
     } else {
       ask = "The reader gave no direction. Continue the story from exactly where it stopped with something new happening. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
     }
@@ -619,6 +670,24 @@ progress[hidden] { display: none; }
     },
     required: ["verdict", "reason", "happens"]
   };
+  // The planner: when the reader just presses Continue, decide one concrete new thing that happens.
+  const NEXT_SCHEMA = { type: "object", properties: { next: { type: "string" } }, required: ["next"] };
+  function nextPrompt() {
+    const beats = beatsText(14);
+    return [
+      "You plan the next part of an interactive story. The reader pressed Continue without saying what to do. Decide what happens next.",
+      driveRule(),
+      paceRule(),
+      "PREMISE: " + story.premise.slice(0, 500),
+      "CHARACTERS:\n" + bibleShort(story.characters, 700),
+      sceneText() ? "CURRENT SCENE: " + sceneText() : "",
+      beats ? "EVENTS THAT ALREADY HAPPENED (do not repeat them):\n" + beats : "",
+      "LATEST PART OF THE STORY:\n" + storySoFar(1500),
+      "",
+      "Reply with JSON:",
+      "- next: one or two sentences saying what new thing happens next. It must be different from everything that already happened, and it must move the story forward, not just describe more of the same scene."
+    ].filter((l) => l !== "").join("\n");
+  }
   function planPrompt(direction) {
     const r = prefs.realism, b = band(r);
     return [
@@ -626,6 +695,7 @@ progress[hidden] { display: none; }
       "When the reader says \"I\", they mean the main character.",
       "REALISM SETTING " + r + "/100 (" + b.name + "): " + b.rule,
       "Judge realism against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
+      paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
       "CHARACTERS:\n" + bibleShort(story.characters, 700),
       sceneText() ? "CURRENT SCENE: " + sceneText() : "",
@@ -779,6 +849,16 @@ progress[hidden] { display: none; }
           const pending = { direction, verdict: plan.verdict, note: plan.reason };
           live.firstChild.replaceWith(directionEl(pending));
           thinking.textContent = "Writing...";
+        } else if (!direction && story.turns.length) {
+          // 1b. no direction: plan one concrete new event so the story can't stall
+          $("contHint").textContent = "Deciding what happens next...";
+          try {
+            const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 160, temperature: 0.9 });
+            if (nx && typeof nx.next === "string" && nx.next.trim()) plan = { next: nx.next.trim() };
+          } catch (e) {
+            if (e && e.code === "cancelled") throw e;
+          }
+          thinking.textContent = "Writing...";
         }
         // 2. write the part
         $("contHint").textContent = "Writing...";
@@ -787,7 +867,7 @@ progress[hidden] { display: none; }
           signal: ctl.signal, maxTokens, temperature: 0.8,
           onText: ({ text }) => {
             renderLiveParas(live, cleanParas(text, prefs.paras), direction);
-            if (plan && live.firstChild) live.firstChild.replaceWith(directionEl({ direction, verdict: plan.verdict, note: plan.reason }));
+            if (plan && direction && live.firstChild) live.firstChild.replaceWith(directionEl({ direction, verdict: plan.verdict, note: plan.reason }));
             scrollDown(true);
           }
         });
@@ -801,7 +881,7 @@ progress[hidden] { display: none; }
       const turn = { direction: direction || "", paragraphs,
         verdict: plan && ["accepted", "adjusted", "refused"].includes(plan.verdict) ? plan.verdict : "",
         note: plan && plan.verdict !== "accepted" && typeof plan.reason === "string" ? plan.reason.trim().slice(0, 240) : "",
-        outcome: plan ? String(plan.happens || "").slice(0, 300) : "" };
+        outcome: plan ? String(plan.happens || plan.next || "").slice(0, 300) : "" };
       story.turns.push(turn);
       story.updated = Date.now();
       renderStory();
@@ -880,7 +960,7 @@ progress[hidden] { display: none; }
     $("stopBtn").hidden = !on;
     $("contHint").textContent = on ? "Writing..." : hintText();
   }
-  function hintText() { if (notesBusy) return "Updating characters and places in the background..."; return "Next part: " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", realism " + prefs.realism; }
+  function hintText() { if (notesBusy) return "Updating characters and places in the background..."; return "Next part: " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", realism " + prefs.realism + ", " + pick(DRIVE_BANDS, prefs.drive).name.toLowerCase() + ", " + pick(PACE_BANDS, prefs.pace).name.toLowerCase() + " pace"; }
   function showErr(msg) {
     const id = story.turns.length ? "contErr" : "beginErr";
     $(id).textContent = msg;
@@ -1123,7 +1203,7 @@ progress[hidden] { display: none; }
   function renderAll() {
     renderStory(); renderBible(); renderRealism();
     $("paras").value = prefs.paras; $("parasOut").textContent = prefs.paras;
-    $("realism").value = prefs.realism;
+    $("realism").value = prefs.realism; $("drive").value = prefs.drive; $("pace").value = prefs.pace;
     $("rate").value = prefs.rate; $("rateOut").textContent = Number(prefs.rate).toFixed(2).replace(/0$/, "") + "×";
     $("beginHint").textContent = "Writes " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", then waits for you.";
     $("contHint").textContent = busy ? "Writing..." : hintText();
@@ -1134,7 +1214,7 @@ progress[hidden] { display: none; }
   }
 
   $("paras").addEventListener("input", (e) => { prefs.paras = +e.target.value; savePrefs(); renderAll(); });
-  $("realism").addEventListener("input", (e) => { prefs.realism = +e.target.value; savePrefs(); renderRealism(); $("contHint").textContent = busy ? "Writing..." : hintText(); });
+  ["realism", "drive", "pace"].forEach((k) => $(k).addEventListener("input", (e) => { prefs[k] = +e.target.value; savePrefs(); renderRealism(); $("contHint").textContent = busy ? "Writing..." : hintText(); }));
   $("rate").addEventListener("input", (e) => { prefs.rate = +e.target.value; savePrefs(); $("rateOut").textContent = prefs.rate.toFixed(2).replace(/0$/, "") + "×"; });
   $("voiceSel").addEventListener("change", () => { prefs.voiceName = $("voiceSel").value; savePrefs(); });
   $("voiceToggle").addEventListener("click", () => {
