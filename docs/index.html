@@ -609,8 +609,27 @@ progress[hidden] { display: none; }
   function parseNotes(raw) {
     if (!raw) return null;
     const a = raw.indexOf("{"), b = raw.lastIndexOf("}");
-    if (a < 0 || b <= a) return null;
-    try { return JSON.parse(raw.slice(a, b + 1)); } catch (e) { return null; }
+    if (a < 0) return null;
+    if (b > a) { try { return JSON.parse(raw.slice(a, b + 1)); } catch (e) { /* try repairing below */ } }
+    // Lenient: drop trailing commas, cut an unfinished string or key, then close whatever is still open.
+    let s = raw.slice(a), out = "", stack = [], inStr = false, esc = false, lastSafe = 0;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      out += ch;
+      if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') { inStr = false; lastSafe = out.length; } continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === "{" || ch === "[") stack.push(ch === "{" ? "}" : "]");
+      else if (ch === "}" || ch === "]") { stack.pop(); lastSafe = out.length; if (!stack.length) break; }
+      else if (/[0-9el]/.test(ch)) lastSafe = out.length;   // end of a number, true, false or null
+    }
+    if (inStr) out = out.slice(0, lastSafe);
+    out = out.replace(/,\s*"[^"]*"\s*:?\s*$/, "").replace(/[,:\s]+$/, "");
+    if (/"\s*:\s*$/.test(out)) out = out.replace(/,?\s*"[^"]*"\s*:\s*$/, "");
+    const closers = []; let st = 0; inStr = false; esc = false;
+    for (const ch of out) { if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true; else if (ch === "{" || ch === "[") closers.push(ch === "{" ? "}" : "]"); else if (ch === "}" || ch === "]") closers.pop(); }
+    out = out.replace(/,(\s*[}\]])/g, "$1") + closers.reverse().join("");
+    try { return JSON.parse(out); } catch (e) { return null; }
   }
   function mergeList(oldList, newList) {
     if (!Array.isArray(newList)) return oldList;
@@ -645,7 +664,9 @@ progress[hidden] { display: none; }
   function mergeChars(oldList, newList, part) {
     if (!Array.isArray(newList)) return oldList;
     const out = oldList.map((o) => { const c = Object.assign({}, o); delete c.fresh; return c; });
-    const blank = /^(none|n\/a|unknown|not mentioned|not stated|nothing|-|same|unchanged)\.?$/i;
+    const blank = /^(none|empty|n\/a|unknown|not mentioned|not stated|nothing|nobody|-|same|unchanged|no change)\.?$/i;
+    const placeWords = story.places.map((p) => stripThe(p.name)).filter((n) => n.length > 3);
+    const looksLikePlace = (v) => /\b(house|home|school|street|road|room|building|town|city|on the hill)\b/i.test(v) && !/\b(dress|shirt|suit|tux|jacket|coat|jeans|pants|skirt|uniform|hoodie|gown|robe|armou?r|boots|shoes)\b/i.test(v) || placeWords.includes(stripThe(v));
     newList.forEach((e) => {
       if (!e || !e.name) return;
       const name = String(e.name).trim(), key = name.toLowerCase();
@@ -657,6 +678,7 @@ progress[hidden] { display: none; }
       AI_CHAR_FIELDS.forEach((k) => {
         let v = k === "sex" ? normSex(e[k]) : String(e[k] == null ? "" : e[k]).trim().slice(0, 160);
         if (!v || blank.test(v)) return;
+        if ((k === "outfit" || k === "looks" || k === "carrying") && looksLikePlace(v)) return;   // a field mix-up by the model
         if ((c[k] || "").toLowerCase() === v.toLowerCase()) return;
         if (k === "sex" && c.sex) return;   // once known, sex doesn't flip on a model whim
         if (c[k] && k !== "role") c.changed[k] = part;
@@ -751,22 +773,28 @@ progress[hidden] { display: none; }
     ].filter(Boolean).join("\n\n");
     let ask;
     if (first) {
-      ask = "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at a moment where the reader can decide what happens next.";
+      ask = "Write the opening of the story in exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ". Introduce the main character and the setting from the premise. Stop at an open moment. Never speak to the reader, ask questions or offer choices.";
     } else if (plan && plan.happens) {
       ask = "THE READER'S DIRECTION: " + direction + "\n" +
         "WHAT HAPPENS BECAUSE OF IT (already decided, you must follow this): " + plan.happens + "\n\n" +
         "Continue the story from exactly where it stopped. Your FIRST paragraph must show this happening, right away. Then write what follows from it. " +
-        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at an open moment. Never speak to the reader, ask questions or offer choices.\n" +
+        "Your first sentence must show this: " + plan.happens;
     } else if (plan && plan.next) {
       ask = "WHAT HAPPENS NEXT (already decided, you must follow this): " + plan.next + "\n\n" +
         "Continue the story from exactly where it stopped. Get to this quickly and show it happening, then write what follows from it. " +
-        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop" + (prefs.drive <= 50 ? " at a moment where the reader can decide what happens next." : " at a point that leaves the reader wanting more.");
+        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop" + (prefs.drive <= 50 ? " at an open moment, before the main character makes their next choice." : " at a point that leaves the reader wanting more.") + " Never speak to the reader, ask questions or offer choices.";
     } else {
-      ask = "The reader gave no direction. Continue the story from exactly where it stopped with something new happening. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at a moment where the reader can decide what happens next.";
+      ask = "The reader gave no direction. Continue the story from exactly where it stopped with something new happening. Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at an open moment. Never speak to the reader, ask questions or offer choices.";
     }
+    // Only the end of the last part: small models copy whole paragraphs from any long excerpt they're shown.
+    // The summary and the list of events carry the rest.
     const room = CTX - maxTokens - estTokens(rules + notes + ask) - 150;
-    const recent = first ? "" : storySoFar(Math.max(500, Math.floor(room * 3.3)));
-    const content = rules + "\n\n" + notes + (recent ? "\n\nTHE STORY SO FAR (latest part):\n" + recent : "") + "\n\n" + ask;
+    // With a direction, even less: the old scene pulls the model away from what the reader asked for.
+    const recent = first ? "" : storySoFar(Math.max(400, Math.min(direction ? 800 : 1400, Math.floor(room * 3.3))));
+    const mc = mainChar();
+    const content = rules + "\n\n" + notes + (recent ? "\n\nTHE END OF THE STORY SO FAR (continue right after this; do not repeat any of it):\n" + recent : "") +
+      (mc && !first ? "\n\nWhen the reader says \"I\", they mean " + mc.name + "." : "") + "\n\n" + ask;
     return { messages: [{ role: "user", content }], maxTokens };
   }
 
@@ -799,12 +827,32 @@ progress[hidden] { display: none; }
       "- next: one or two sentences saying what new thing happens next. It must be different from everything that already happened, and it must move the story forward, not just describe more of the same scene."
     ].filter((l) => l !== "").join("\n");
   }
+  // Small models wave impossible things through. When the reader asks for a superpower in a world without any,
+  // the realism slider decides the verdict here, and the referee only describes it.
+  const POWERS = /\b(fly|flies|flew|flying|levitat\w*|lasers?|teleport\w*|telekine\w*|super ?powers?|super ?strength|super ?speed|invisib\w*|magic(al|ally)?|cast(s|ing)? a spell|fireballs?|shoot\w* (fire|lightning|beams?)|turn(s|ed)? into an? \w+|read (his|her|their|its) mind|mind ?read\w*|time ?travel\w*|resurrect\w*|back to life)\b/i;
+  const FANTASTIC = /\b(magic|wizard|witch|sorcer\w*|dragons?|superhero\w*|super ?powers?|mutants?|sci-?fi|aliens?|spaceship|starship|spells?|fantasy|elves|elf|vampires?|werewol\w*|demons?|gods?|goddess|psychic|cyborgs?|robots?)\b/i;
+  function forcedVerdict(direction) {
+    if (!POWERS.test(direction)) return "";
+    if (FANTASTIC.test(story.premise + " " + (story.summary || "") + " " + (story.style || ""))) return "";
+    return prefs.realism <= 10 ? "accepted" : prefs.realism <= 35 ? "adjusted" : "refused";
+  }
+  const FORCED_TEXT = {
+    accepted: "This breaks the rules of the story's world, but the realism setting says anything goes: it really happens, exactly as the reader says. Verdict: accepted.",
+    adjusted: "This is impossible in the story's world, so it only partly happens, with a real cost or a down-to-earth explanation. Verdict: adjusted.",
+    refused: "This is impossible in the story's world, so it does NOT happen. Verdict: refused. In happens, describe the main character trying and nothing impossible happening, and how the people around react."
+  };
+  const forcedSchemas = {};
+  function planSchema(forced) {
+    if (!forced) return PLAN_SCHEMA;
+    return forcedSchemas[forced] || (forcedSchemas[forced] = { type: "object", properties: Object.assign({}, PLAN_SCHEMA.properties, { verdict: { type: "string", enum: [forced] } }), required: PLAN_SCHEMA.required });
+  }
   function planPrompt(direction) {
     const r = prefs.realism, b = band(r);
     return [
       "You are the referee of an interactive story. The reader has just told the story what to do next. Decide what actually happens.",
-      "When the reader says \"I\", they mean the main character.",
+      "When the reader says \"I\", they mean the main character" + (mainChar() ? ", " + mainChar().name : "") + ".",
       "REALISM SETTING " + r + "/100 (" + b.name + "): " + b.rule,
+      forcedVerdict(direction) ? "DECIDED ALREADY: " + FORCED_TEXT[forcedVerdict(direction)] : "",
       "Judge realism against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
       paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
@@ -818,7 +866,8 @@ progress[hidden] { display: none; }
       "Reply with JSON:",
       "- verdict: accepted if it happens as the reader asked; adjusted if it only partly works or happens differently; refused if it fails or cannot happen.",
       "- reason: one short sentence telling the reader why, or an empty string if accepted.",
-      "- happens: one or two sentences saying exactly what happens next because of the direction. The direction must change the story; never ignore it."
+      "- happens: one or two sentences saying exactly what happens next because of the direction. Start with the main character doing what the reader said (unless refused). The direction must change the story; never ignore it.",
+      "THE READER'S DIRECTION AGAIN: " + direction
     ].filter((l) => l !== "").join("\n");
   }
 
@@ -827,6 +876,27 @@ progress[hidden] { display: none; }
       .map((p) => p.replace(/^(paragraph|part)\s*\d+\s*[:.\-]\s*/i, ""))
       .filter((p) => p && !/^(here('s| is| are)|sure[,!.]|certainly[,!.]|okay[,!.])/i.test(p) && !/^(paragraph|part)\s*\d+$/i.test(p))
       .slice(0, n);
+  }
+  // Drop sentences the model copied from earlier parts, and any closing line that talks to the reader.
+  function normSent(s) { return s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function sentencesOf(p) { return p.match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/g) || [p]; }
+  function dropRepeats(paragraphs) {
+    const seen = new Set(), grams = new Set();
+    story.turns.forEach((t) => t.paragraphs.forEach((p) => sentencesOf(p).forEach((s) => {
+      const n = normSent(s); if (n.length > 20) seen.add(n);
+      const w = n.split(" "); for (let i = 0; i + 5 <= w.length; i++) grams.add(w.slice(i, i + 5).join(" "));
+    })));
+    let kept = 0, total = 0;
+    const out = paragraphs.map((p) => sentencesOf(p).filter((s) => {
+      const n = normSent(s); if (!n) return false;
+      total++;
+      if (/\b(your turn|you decide|what happens next|what will (he|she|they|you) do|choose (whether|between)|the choice is yours)\b/i.test(s)) return false;
+      if (n.length > 20 && seen.has(n)) return false;
+      const w = n.split(" ");
+      if (w.length >= 8) { let hit = 0, all = 0; for (let i = 0; i + 5 <= w.length; i++) { all++; if (grams.has(w.slice(i, i + 5).join(" "))) hit++; } if (hit / all > 0.5) return false; }
+      kept++; return true;
+    }).join("").trim()).filter(Boolean);
+    return { paragraphs: out, kept, total };
   }
 
   const NOTES_SCHEMA = {
@@ -871,21 +941,83 @@ progress[hidden] { display: none; }
       "KNOWN CHARACTERS:\n" + castText(newText, 1300),
       "KNOWN PLACES:\n" + bibleShort(story.places, 500),
       "NEWEST PART:\n" + newText.slice(-3000),
-      "Fill in the JSON:",
-      "- title: keep the current title if there is one, otherwise invent a short one.",
+      (() => { const who = story.characters.filter((c) => nameIn(c.name, newText)).map((c) => c.name);
+        const mc = mainChar(); if (mc && !who.includes(mc.name)) who.unshift(mc.name);
+        return who.length ? "The characters list must include: " + who.join(", ") + ", plus anyone new who appears." : ""; })(),
+      "Fill in the JSON. Use an empty string \"\" for anything the story doesn't say; never write words like empty, none or unknown.",
+      "- title: " + (story.title ? "write exactly: " + story.title : "a short title for the story, 2-6 words."),
       "- beat: the single most important thing that happened in the newest part, in one short sentence (under 20 words).",
       "- summary: the whole story so far in under 120 words, updating the old summary with the newest part.",
       "- scene: where things stand at the END of the newest part. who = the main character's name; where = where they are now; came_from = the place they were before that; heading_to = where they are trying to go, or empty; present = who else is with them, or empty.",
-      "- characters: only the characters who appear in the newest part, using the same names as the known ones. Each field is short. role: 2-5 words. sex: male, female or unknown. age: a number or a word like teen, or empty. looks: body, face and hair, under 15 words. outfit: what they are wearing at the end of the part, under 12 words; keep the known outfit unless they changed clothes. condition: health, injuries and mood, under 10 words. carrying: what they hold or carry, under 10 words, or empty. where: where they are at the end of the part.",
-      "- places: every named place, details under 20 words."
+      "- characters: only the characters who appear in the newest part, using the same names as the known ones. Each field is short. role: 2-5 words. sex: male, female or unknown. age: a number or a word like teen, or empty. looks: body, face and hair, under 15 words. outfit: what the story says they are wearing at the end of the part, under 12 words; keep the known outfit unless they changed clothes, and leave it empty if the story never said. condition: health, injuries and mood, under 10 words. carrying: what they hold or carry, under 10 words, or empty. where: where they are at the end of the part.",
+      "- places: every place in the newest part that has a name or a clear identity (for example someone's home or a school gym), including where the scene is. details under 20 words."
     ].filter(Boolean).join("\n");
   }
   // ---------- the on-device model, behind the same call shape the page already uses ----------
   let llmQueue = Promise.resolve();
+  // The AI library sometimes breaks mid-answer when the JSON rules are on ("Grammar matcher rejected the newly
+  // sampled token", then "deleted object" / "Model not loaded" for every later call). When that happens: restart
+  // the model from storage and redo the call once; JSON calls are redone without the rules and read leniently.
+  function isEngineBreak(e) {
+    return !!e && e.code === "upstream_error" && /rejected the newly sampled|deleted object|already been disposed|not loaded|GrammarMatcher|device (was )?lost|stalled/i.test(e.message || "");
+  }
+  async function restartEngine() {
+    const m = MODELS.find((x) => x.key === prefs.model) || chosenModel();
+    aiStatus("The AI hit a glitch. Restarting it...");
+    try { await Promise.race([engine.reload(modelId(m)), new Promise((_, rej) => setTimeout(() => rej(new Error("reload timed out")), 120000))]); }
+    catch (e) { console.warn("reload failed, starting fresh:", e); engine = null; sample = null; await loadModel(); if (!engine) throw { code: "no_model" }; }
+    aiStatus("Ready. " + m.name.split(":")[0] + " model is running on this device, with no internet needed.", "ok");
+  }
   function runLLM(messages, opts) {
-    const job = llmQueue.then(() => runLLMNow(messages, opts || {}));
+    opts = opts || {};
+    const job = llmQueue.then(async () => {
+      try { return await runLLMNow(messages, opts); }
+      catch (e) {
+        if (!isEngineBreak(e) || (opts.signal && opts.signal.aborted)) throw e;
+        console.warn("AI engine broke; restarting:", e.message);
+        await restartEngine();
+        if (!opts.schema) return await runLLMNow(messages, opts);
+        const m = messages.slice(), last = m[m.length - 1];
+        m[m.length - 1] = Object.assign({}, last, { content: last.content + "\n\nReply with only the JSON object, on one line, and nothing else." });
+        return await runLLMNow(m, Object.assign({}, opts, { schema: null, temperature: Math.min(0.4, opts.temperature == null ? 0.4 : opts.temperature) }));
+      }
+    });
     llmQueue = job.catch(() => {});
     return job;
+  }
+  // JSON schema -> a strict, single-line grammar. The library's own JSON mode allows unlimited blank space
+  // between fields, and the small model sometimes gets stuck printing blank space until it runs out of room.
+  const grammarCache = new Map();
+  function schemaGrammar(schema) {
+    if (grammarCache.has(schema)) return grammarCache.get(schema);
+    const rules = [], q = (s) => JSON.stringify(s);   // q() makes an EBNF string literal
+    let n = 0;
+    const rule = (body) => { const name = "r" + (n++); rules.push(name + " ::= " + body); return name; };
+    const lit = (s) => q(JSON.stringify(s));   // the JSON text of s, as a grammar literal
+    function walk(s) {
+      if (s.enum) return "(" + s.enum.map(lit).join(" | ") + ")";
+      if (s.type === "string") return "str";
+      if (s.type === "number" || s.type === "integer") return "num";
+      if (s.type === "boolean") return '("true" | "false")';
+      if (s.type === "array") {
+        const item = walk(s.items || { type: "string" });
+        const max = s.maxItems ? Math.max(0, s.maxItems - 1) : null;
+        const min = s.minItems || 0;
+        const more = max === null ? "(\",\" " + item + ")*" : "(\",\" " + item + "){0," + max + "}";
+        return rule(min > 0 ? "\"[\" " + item + " " + more + " \"]\"" : "\"[\" (" + item + " " + more + ")? \"]\"");
+      }
+      const keys = Object.keys(s.properties || {});
+      if (!keys.length) return rule("\"{}\"");
+      return rule("\"{\" " + keys.map((k, i) => (i ? "\",\" " : "") + q(JSON.stringify(k) + ":") + " " + walk(s.properties[k])).join(" ") + " \"}\"");
+    }
+    const top = walk(schema);
+    const g = ["root ::= " + top].concat(rules, [
+      'str ::= "\\"" strc{0,400} "\\""',
+      'strc ::= [^"\\\\\\x00-\\x1f] | "\\\\" ["\\\\/nt]',
+      'num ::= "-"? [0-9]{1,6} ("." [0-9]{1,3})?'
+    ]).join("\n");
+    grammarCache.set(schema, g);
+    return g;
   }
   async function runLLMNow(messages, { onText, signal, maxTokens = 800, temperature = 0.8, schema } = {}) {
     if (!engine) throw { code: "no_model" };
@@ -893,17 +1025,30 @@ progress[hidden] { display: none; }
     const stop = () => { try { engine.interruptGenerate(); } catch (e) { /* already stopped */ } };
     if (signal) signal.addEventListener("abort", stop);
     let text = "", finish = null;
+    // Watchdog: the AI library can hang without an error. If nothing new arrives for too long, give up on this
+    // call (the caller then restarts the model) instead of waiting forever. The first word gets longer, because
+    // reading a long prompt on a phone takes a while.
+    let lastAt = Date.now(), started = false, stallReject = null;
+    const stalled = new Promise((_, rej) => { stallReject = rej; });
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastAt > (started ? 60000 : 180000)) { stop(); stallReject({ code: "upstream_error", message: "stalled: the AI stopped responding", text }); }
+    }, 5000);
     try {
       const req = { messages, stream: true, max_tokens: maxTokens, temperature, top_p: 0.95 };
-      if (schema) req.response_format = { type: "json_object", schema: JSON.stringify(schema) };
+      if (schema) req.response_format = schema.properties ? { type: "grammar", grammar: schemaGrammar(schema) } : { type: "json_object" };
       else { req.frequency_penalty = 0.4; req.presence_penalty = 0.3; }
-      const stream = await engine.chat.completions.create(req);
-      for await (const chunk of stream) {
-        const c = chunk.choices && chunk.choices[0];
-        const d = c && c.delta && c.delta.content;
-        if (d) { text += d; if (onText) onText({ text, delta: d }); }
-        if (c && c.finish_reason) finish = c.finish_reason;
-      }
+      const consume = (async () => {
+        const stream = await engine.chat.completions.create(req);
+        for await (const chunk of stream) {
+          started = true; lastAt = Date.now();
+          const c = chunk.choices && chunk.choices[0];
+          const d = c && c.delta && c.delta.content;
+          if (d) { text += d; if (onText) onText({ text, delta: d }); }
+          if (c && c.finish_reason) finish = c.finish_reason;
+        }
+      })();
+      consume.catch(() => {});   // if the watchdog already gave up, a late error here is expected
+      await Promise.race([consume, stalled]);
       if (signal && signal.aborted) throw { code: "cancelled", text };
       if (!text.trim()) throw { code: "empty_completion" };
       return { text, truncated: finish === "length" };
@@ -913,8 +1058,16 @@ progress[hidden] { display: none; }
       console.error(e);
       throw { code: "upstream_error", message: String((e && e.message) || e), text };
     } finally {
+      clearInterval(watchdog);
       if (signal) signal.removeEventListener("abort", stop);
     }
+  }
+  // The small model sometimes wraps words in math markup ($\text{Romeo}$) or markdown; strip it from every field.
+  function cleanStrings(v) {
+    if (typeof v === "string") return v.replace(/\$\s*\\text\{([^}]*)\}\s*\$/g, "$1").replace(/\\text\{([^}]*)\}/g, "$1").replace(/\$([^$]{1,60})\$/g, "$1").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim();
+    if (Array.isArray(v)) return v.map(cleanStrings);
+    if (v && typeof v === "object") { const o = {}; Object.keys(v).forEach((k) => { o[k] = cleanStrings(v[k]); }); return o; }
+    return v;
   }
   function makeSample() {
     const s = (input, opts) => runLLM(typeof input === "string" ? [{ role: "user", content: input }] : input, opts);
@@ -924,7 +1077,7 @@ progress[hidden] { display: none; }
       const { text } = await s(input, o);
       const v = parseNotes(text);
       if (!v) throw { code: "invalid_json", text };
-      return v;
+      return cleanStrings(v);
     };
     return s;
   }
@@ -955,13 +1108,22 @@ progress[hidden] { display: none; }
         if (direction && story.turns.length) {
           $("contHint").textContent = "Applying your direction...";
           try {
-            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: PLAN_SCHEMA, maxTokens: 220, temperature: 0.3 });
+            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 220, temperature: 0.3 });
             if (!plan || typeof plan.happens !== "string" || !plan.happens.trim()) plan = null;
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
             plan = null;
           }
-          if (!plan) plan = { verdict: "", reason: "", happens: direction };   // fall back to the reader's own words
+          // A refused superpower must not sneak back in through the referee's own wording.
+          const fvNow = forcedVerdict(direction);
+          if (plan && fvNow === "refused" && (POWERS.test(plan.happens) || FANTASTIC.test(plan.happens))) {
+            const who = mainChar() ? mainChar().name : "The main character";
+            plan.happens = who + " tries it, but nothing happens: this is the real world and people can't do that. The people nearby notice the strange moment and react.";
+          }
+          if (!plan) {   // fall back to the reader's own words
+            const fv = forcedVerdict(direction);
+            plan = { verdict: fv, reason: "", happens: fv === "refused" ? "The main character tries this, but it is impossible here and nothing happens: " + direction : direction };
+          }
           const pending = { direction, verdict: plan.verdict, note: plan.reason };
           live.firstChild.replaceWith(directionEl(pending));
           thinking.textContent = "Writing...";
@@ -979,20 +1141,33 @@ progress[hidden] { display: none; }
         // 2. write the part
         $("contHint").textContent = "Writing...";
         const { messages, maxTokens } = storyPrompt(direction, plan);
-        res = await sample(messages, {
-          signal: ctl.signal, maxTokens, temperature: 0.8,
+        const gen = (msgs, temperature) => sample(msgs, {
+          signal: ctl.signal, maxTokens, temperature,
           onText: ({ text }) => {
             renderLiveParas(live, cleanParas(text, prefs.paras), direction);
             if (plan && direction && live.firstChild) live.firstChild.replaceWith(directionEl({ direction, verdict: plan.verdict, note: plan.reason }));
             scrollDown(true);
           }
         });
+        const tidy = (r) => {
+          const ps = cleanParas(r.text, prefs.paras);
+          if (r.truncated && ps.length) {   // ran out of room mid-sentence: end on the last full sentence
+            const last = ps[ps.length - 1], m = last.match(/^[\s\S]*[.!?…]["'”’)]*/);
+            if (m && m[0].length > 40) ps[ps.length - 1] = m[0];
+          }
+          return dropRepeats(ps);
+        };
+        res = await gen(messages, 0.8);
+        res.check = tidy(res);
+        if (story.turns.length && res.check.total && res.check.kept < res.check.total * 0.6) {
+          // Mostly copied from earlier parts: try once more, hotter, with a direct warning.
+          $("contHint").textContent = "That came out repetitive; trying again...";
+          const again = await gen([{ role: "user", content: messages[0].content + "\n\nIMPORTANT: do not reuse any sentence or line of dialogue from the story so far. Every sentence must be new." }], 1.0);
+          again.check = tidy(again);
+          if (again.check.paragraphs.length >= res.check.paragraphs.length) res = again;
+        }
       } finally { live.remove(); }
-      const paragraphs = cleanParas(res.text, prefs.paras);
-      if (res.truncated && paragraphs.length) {   // ran out of room mid-sentence: end on the last full sentence
-        const last = paragraphs[paragraphs.length - 1], m = last.match(/^[\s\S]*[.!?…]["'”’)]*/);
-        if (m && m[0].length > 40) paragraphs[paragraphs.length - 1] = m[0];
-      }
+      const paragraphs = res.check.paragraphs;
       if (!paragraphs.length) throw { code: "empty_completion" };
       const turn = { direction: direction || "", paragraphs,
         verdict: plan && ["accepted", "adjusted", "refused"].includes(plan.verdict) ? plan.verdict : "",
@@ -1025,16 +1200,29 @@ progress[hidden] { display: none; }
     try {
       const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1400, temperature: 0.3 });
       if (!story.turns.includes(turn)) return;   // the part was undone meanwhile
+      const blankish = (v) => { v = String(v || "").trim(); return /^(empty|none|n\/a|unknown|nothing|nobody|no one|not mentioned|not stated|-)\b/i.test(v) ? "" : v; };
       if (typeof meta.beat === "string" && meta.beat.trim()) turn.beat = meta.beat.trim().slice(0, 200);
-      if (meta.title && !story.title) story.title = String(meta.title).slice(0, 80);
-      if (typeof meta.summary === "string" && meta.summary.trim()) story.summary = meta.summary.trim().slice(0, 1200);
-      if (meta.scene && typeof meta.scene === "object" && meta.scene.where) {
+      const title = String(meta.title || "").replace(/\([^)]*\)/g, "").replace(/\b(new )?title\b:?/gi, "").replace(/["*]/g, "").trim();
+      if (title && !story.title && title.length < 70) story.title = title;
+      // Small models tend to summarise only the newest part; then keep the old summary and add this part's beat.
+      const sum = typeof meta.summary === "string" ? meta.summary.trim() : "";
+      if (sum && (!story.summary || sum.length >= story.summary.length * 0.6)) story.summary = sum.slice(0, 1200);
+      else if (turn.beat) { let s = ((story.summary || "") + " " + turn.beat.replace(/([^.!?])$/, "$1.")).trim(); while (s.length > 1200 && s.indexOf(". ") > 0) s = s.slice(s.indexOf(". ") + 2); story.summary = s; }
+      if (meta.scene && typeof meta.scene === "object" && blankish(meta.scene.where)) {
         const s = {};
-        ["who", "where", "came_from", "heading_to", "present"].forEach((k) => { s[k] = String(meta.scene[k] || "").trim().slice(0, 80); });
+        ["who", "where", "came_from", "heading_to", "present"].forEach((k) => { let v = blankish(meta.scene[k]);
+          if (k !== "present") v = v.replace(/,.*$/, "").trim();   // "Romeo's neighborhood, just across town from..." -> the place itself
+          s[k] = v.slice(0, 80); });
         story.scene = s;
       }
       story.characters = mergeChars(story.characters, meta.characters, story.turns.indexOf(turn) + 1);
-      story.places = mergeList(story.places, meta.places);
+      const placeNames = new Set(((meta.places || []).filter((p) => p && p.name)).map((p) => stripThe(p.name)));
+      const extra = [];   // where the scene is, came from and is heading are places too: the map needs them
+      if (story.scene) ["where", "came_from", "heading_to"].forEach((k) => { const v = story.scene[k];
+        if (v && v.length <= 40 && v.split(/\s+/).length <= 5 && !placeNames.has(stripThe(v)) && !extra.some((e) => stripThe(e.name) === stripThe(v))) extra.push({ name: v.replace(/^(at|in|to) /i, ""), details: "" }); });
+      story.places = mergeList(story.places, (meta.places || []).concat(extra));
+      const isPlace = new Set(story.places.map((p) => stripThe(p.name)));
+      story.characters = story.characters.filter((c) => !isPlace.has(stripThe(c.name)) || c.sex);   // a place listed as a person
       syncMap();
       if (!busy) renderStory();
       renderBible(); renderCharacters(); renderMapMeta(); persist();
