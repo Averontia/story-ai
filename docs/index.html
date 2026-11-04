@@ -770,6 +770,7 @@ progress[hidden] { display: none; }
     const rules = [
       "You are a skilled storyteller writing an interactive story with a reader. Write vivid, natural prose, with dialogue where it fits.",
       "Write only story text: no title, no headings, no lists, no notes, and no questions to the reader.",
+      "Always write in the third person and past tense, using characters' names, even when the reader writes \"I\".",
       "Keep the story moving forward. Never repeat an event, scene or description that already happened; each part must add something new.",
       "Keep track of where everyone is: characters only move between places by actually travelling, and they remember where they came from.",
       "Never describe again a place, person or object that was already described; refer to it in a few words. Never stall: something must change in every paragraph.",
@@ -798,8 +799,8 @@ progress[hidden] { display: none; }
       ask = (plan.verdict === "refused" ? "" : "THE READER'S DIRECTION: " + direction + "\n") +
         "WHAT HAPPENS BECAUSE OF IT (already decided, you must follow this): " + plan.happens + "\n\n" +
         "Continue the story from exactly where it stopped. Your FIRST paragraph must show this happening, right away. Then write what follows from it. " +
-        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at an open moment. Never speak to the reader, ask questions or offer choices.\n" +
-        "Your first sentence must show this: " + plan.happens;
+        "Write exactly " + n + " paragraph" + (n === 1 ? "" : "s") + ", then stop at an open moment. Never speak to the reader, ask questions or offer choices." +
+        (plan.opening ? "" : "\nYour first sentence must show this: " + plan.happens);
     } else if (plan && plan.next) {
       ask = "WHAT HAPPENS NEXT (already decided, you must follow this): " + plan.next + "\n\n" +
         "Continue the story from exactly where it stopped. Get to this quickly and show it happening, then write what follows from it. " +
@@ -813,8 +814,10 @@ progress[hidden] { display: none; }
     // With a direction, even less: the old scene pulls the model away from what the reader asked for.
     const recent = first ? "" : storySoFar(Math.max(400, Math.min(direction ? 800 : 1400, Math.floor(room * 3.3))));
     const mc = mainChar();
-    const content = rules + "\n\n" + notes + (recent ? "\n\nTHE END OF THE STORY SO FAR (continue right after this; do not repeat any of it):\n" + recent : "") +
-      (mc && !first ? "\n\nWhen the reader says \"I\", they mean " + mc.name + "." : "") + "\n\n" + ask;
+    const opening = plan && plan.opening ? plan.opening : "";
+    const content = rules + "\n\n" + notes + (recent ? "\n\nTHE END OF THE STORY SO FAR (continue right after this; do not repeat any of it):\n" + recent + (opening ? "\n\n" + opening : "") : "") +
+      (mc && !first ? "\n\nWhen the reader says \"I\", they mean " + mc.name + "." : "") + "\n\n" + ask +
+      (opening ? "\n\nThe new part has already begun with this sentence: \"" + opening + "\"\nWrite what comes right after it, continuing that same paragraph. Do not repeat that sentence. Count it as part of the first paragraph." : "");
     return { messages: [{ role: "user", content }], maxTokens };
   }
 
@@ -824,12 +827,21 @@ progress[hidden] { display: none; }
     properties: {
       verdict: { type: "string", enum: ["accepted", "adjusted", "refused"] },
       reason: { type: "string" },
-      happens: { type: "string" }
+      happens: { type: "string" },
+      opening: { type: "string" }
     },
-    required: ["verdict", "reason", "happens"]
+    required: ["verdict", "reason", "happens", "opening"]
   };
   // The planner: when the reader just presses Continue, decide one concrete new thing that happens.
-  const NEXT_SCHEMA = { type: "object", properties: { next: { type: "string" } }, required: ["next"] };
+  const NEXT_SCHEMA = { type: "object", properties: { next: { type: "string" }, opening: { type: "string" } }, required: ["next", "opening"] };
+  // Both planners also write the first sentence of the next part. It goes into the story as written and the
+  // writer only continues it, so the decided event is on the page even when a small writer model drifts.
+  const OPENING_RULE = "- opening: the first sentence of the next part, written as story prose like the story itself (past tense, third person, real names, no \"I\"), showing this happening. Under 30 words.";
+  function cleanOpening(s) {
+    s = String(s || "").replace(/^["'\s]+|["'\s]+$/g, "").replace(/\s+/g, " ").trim();
+    if (s.length < 15 || s.length > 260 || /^(opening|the first sentence)\b/i.test(s)) return "";
+    return /[.!?…"”]$/.test(s) ? s : s + ".";
+  }
   function nextPrompt() {
     const beats = beatsText(14);
     return [
@@ -844,7 +856,8 @@ progress[hidden] { display: none; }
       "LATEST PART OF THE STORY:\n" + storySoFar(1500),
       "",
       "Reply with JSON:",
-      "- next: one or two sentences saying what new thing happens next. It must be different from everything that already happened, and it must move the story forward, not just describe more of the same scene."
+      "- next: one or two sentences saying what new thing happens next. It must be different from everything that already happened, and it must move the story forward, not just describe more of the same scene.",
+      OPENING_RULE
     ].filter((l) => l !== "").join("\n");
   }
   // Small models wave impossible things through. When the reader asks for a superpower in a world without any,
@@ -887,6 +900,7 @@ progress[hidden] { display: none; }
       "- verdict: accepted if it happens as the reader asked; adjusted if it only partly works or happens differently; refused if it fails or cannot happen.",
       "- reason: one short sentence telling the reader why, or an empty string if accepted.",
       "- happens: one or two sentences saying exactly what happens next because of the direction. Start with the main character doing what the reader said (unless refused). The direction must change the story; never ignore it.",
+      OPENING_RULE,
       "THE READER'S DIRECTION AGAIN: " + direction
     ].filter((l) => l !== "").join("\n");
   }
@@ -1129,7 +1143,7 @@ progress[hidden] { display: none; }
         if (direction && story.turns.length) {
           $("contHint").textContent = "Applying your direction...";
           try {
-            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 220, temperature: 0.3 });
+            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 320, temperature: 0.3 });
             if (!plan || typeof plan.happens !== "string" || !plan.happens.trim()) plan = null;
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
@@ -1145,6 +1159,14 @@ progress[hidden] { display: none; }
             const fv = forcedVerdict(direction);
             plan = { verdict: fv, reason: "", happens: fv === "refused" ? "The main character tries this, but it is impossible here and nothing happens: " + direction : direction };
           }
+          plan.opening = cleanOpening(plan.opening);
+          if (fvNow === "refused" && (!plan.opening || POWERS.test(plan.opening) || FANTASTIC.test(plan.opening))) {
+            const who = mainChar() ? mainChar().name : "He";
+            plan.opening = who + " tried, with everything he had, but of course nothing happened.";
+            if (mainChar() && mainChar().sex === "female") plan.opening = plan.opening.replace(" he had", " she had");
+            else if (!mainChar() || mainChar().sex !== "male") plan.opening = plan.opening.replace(" he had", " they had");
+          }
+          if (plan.opening && /\bI\b|\bmy\b/.test(plan.opening) && mainChar()) plan.opening = "";   // the reader's "I" leaked in: skip it
           const pending = { direction, verdict: plan.verdict, note: plan.reason };
           live.firstChild.replaceWith(directionEl(pending));
           thinking.textContent = "Writing...";
@@ -1152,8 +1174,8 @@ progress[hidden] { display: none; }
           // 1b. no direction: plan one concrete new event so the story can't stall
           $("contHint").textContent = "Deciding what happens next...";
           try {
-            const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 160, temperature: 0.9 });
-            if (nx && typeof nx.next === "string" && nx.next.trim()) plan = { next: nx.next.trim() };
+            const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 260, temperature: 0.9 });
+            if (nx && typeof nx.next === "string" && nx.next.trim()) plan = { next: nx.next.trim(), opening: cleanOpening(nx.opening) };
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
           }
@@ -1162,16 +1184,25 @@ progress[hidden] { display: none; }
         // 2. write the part
         $("contHint").textContent = "Writing...";
         const { messages, maxTokens } = storyPrompt(direction, plan);
+        // The planner's opening sentence starts the part; the writer's text continues it.
+        const opening = plan && plan.opening ? plan.opening : "";
+        const joined = (text) => {
+          if (!opening) return text;
+          let t = text.replace(/^\s+/, "");
+          const first = (sentencesOf(t)[0] || "");
+          if (first && normSent(first).slice(0, 30) === normSent(opening).slice(0, 30)) t = t.slice(first.length).replace(/^\s+/, "");   // it repeated the opening
+          return opening + (t ? (/^\n/.test(text) ? "\n\n" : " ") + t : "");
+        };
         const gen = (msgs, temperature) => sample(msgs, {
           signal: ctl.signal, maxTokens, temperature,
           onText: ({ text }) => {
-            renderLiveParas(live, cleanParas(text, prefs.paras), direction);
+            renderLiveParas(live, cleanParas(joined(text), prefs.paras), direction);
             if (plan && direction && live.firstChild) live.firstChild.replaceWith(directionEl({ direction, verdict: plan.verdict, note: plan.reason }));
             scrollDown(true);
           }
         });
         const tidy = (r) => {
-          const ps = cleanParas(r.text, prefs.paras);
+          const ps = cleanParas(joined(r.text), prefs.paras);
           if (r.truncated && ps.length) {   // ran out of room mid-sentence: end on the last full sentence
             const last = ps[ps.length - 1], m = last.match(/^[\s\S]*[.!?…]["'”’)]*/);
             if (m && m[0].length > 40) ps[ps.length - 1] = m[0];
