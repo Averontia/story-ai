@@ -2320,10 +2320,19 @@ progress[hidden] { display: none; }
     { key: "medium", name: "Better: Gemma 2 2B", f16: "gemma-2-2b-it-q4f16_1-MLC", f32: "gemma-2-2b-it-q4f32_1-MLC",
       size: "About a 1.5 GB download.", fit: "Needs an iPhone 15 Pro or newer, or a PC." },
     { key: "large", name: "Best: Hermes 3 (3B)", f16: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", f32: "Hermes-3-Llama-3.2-3B-q4f32_1-MLC",
-      size: "About a 1.8 GB download.", fit: "Best on a PC. On iPhone, only the newest Pro models have enough memory." }
+      size: "About a 1.8 GB download.", fit: "Best on a PC. Too big for most phones: the page may close while it loads." }
   ];
   const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let webllm = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
+  // If a model is too big, the browser kills the whole page while loading it (iPhone Safari: "A problem repeatedly occurred").
+  // A marker is written before loading and cleared after; finding it at startup means the last load crashed the page.
+  const LOADING_KEY = "storyai.loadingModel", TOO_BIG_KEY = "storyai.tooBig";
+  const tooBig = () => safeLS(() => JSON.parse(localStorage.getItem(TOO_BIG_KEY)) || [], []);
+  const crashedKey = safeLS(() => localStorage.getItem(LOADING_KEY), null);
+  safeLS(() => localStorage.removeItem(LOADING_KEY));
+  if (crashedKey && !tooBig().includes(crashedKey)) safeLS(() => localStorage.setItem(TOO_BIG_KEY, JSON.stringify(tooBig().concat(crashedKey))));
+  function modelLabel(m) { return m.name + (tooBig().includes(m.key) ? " (too big for this device)" : ""); }
+  function smallerThan(key) { const i = MODELS.findIndex((m) => m.key === key); return MODELS[Math.max(0, i - 1)].key; }
 
   function chosenModel() { return MODELS.find((m) => m.key === $("modelSel").value) || MODELS[0]; }
   function modelId(m) { return hasF16 ? m.f16 : m.f32; }
@@ -2372,7 +2381,13 @@ progress[hidden] { display: none; }
     if (loadingModel) return;
     const m = chosenModel();
     if (!(await checkGPU())) { aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
+    if (tooBig().includes(m.key)) {
+      if (!(await confirmBox("Last time, " + m.name.split(": ")[1] + " needed more memory than this device has, and the page closed. Try again anyway?"))) return;
+    } else if (isPhone && m.key === "large") {
+      if (!(await confirmBox("Hermes 3 usually needs more memory than a phone browser allows. The page may close while it loads. Try anyway?"))) return;
+    }
     loadingModel = true;
+    safeLS(() => localStorage.setItem(LOADING_KEY, m.key));
     $("loadBtn").disabled = true; $("modelSel").disabled = true;
     $("loadProg").hidden = false; $("loadProg").value = 0;
     aiStatus("Getting ready...");
@@ -2395,6 +2410,7 @@ progress[hidden] { display: none; }
       }
       sample = makeSample();
       prefs.model = m.key; savePrefs();
+      safeLS(() => localStorage.setItem(TOO_BIG_KEY, JSON.stringify(tooBig().filter((k) => k !== m.key))));
       aiStatus("Ready. " + m.name.split(":")[0] + " model is running on this device, with no internet needed." + (await storageNote()), "ok");
       showBanner("");
     } catch (e) {
@@ -2404,6 +2420,8 @@ progress[hidden] { display: none; }
       showBanner("The offline AI isn't running yet.");
     } finally {
       loadingModel = false;
+      safeLS(() => localStorage.removeItem(LOADING_KEY));
+      [...$("modelSel").options].forEach((o) => { o.textContent = modelLabel(MODELS.find((x) => x.key === o.value)); });
       $("loadProg").hidden = true; $("modelSel").disabled = false;
       renderModelInfo();
     }
@@ -2419,8 +2437,8 @@ progress[hidden] { display: none; }
     renderModelInfo();
   }
 
-  MODELS.forEach((m) => { const o = document.createElement("option"); o.value = m.key; o.textContent = m.name; $("modelSel").append(o); });
-  $("modelSel").value = prefs.model || (isPhone ? "small" : "large");
+  MODELS.forEach((m) => { const o = document.createElement("option"); o.value = m.key; o.textContent = modelLabel(m); $("modelSel").append(o); });
+  $("modelSel").value = crashedKey ? smallerThan(crashedKey) : prefs.model || (isPhone ? "small" : "large");
   $("modelSel").addEventListener("change", renderModelInfo);
   $("loadBtn").addEventListener("click", loadModel);
   $("deleteModelBtn").addEventListener("click", deleteModel);
@@ -2440,7 +2458,10 @@ progress[hidden] { display: none; }
       return;
     }
     const cached = await renderModelInfo();
-    if (prefs.model && cached) loadModel();               // start the model you used last time
+    if (crashedKey) {
+      const big = MODELS.find((m) => m.key === crashedKey);
+      aiStatus("The page closed while starting " + (big ? big.name.split(": ")[1] : "the AI") + ". That usually means this device doesn't have enough memory for it. I've picked a smaller model; press " + $("loadBtn").textContent + ".", "bad");
+    } else if (prefs.model && cached && !tooBig().includes(prefs.model)) loadModel();   // start the model you used last time
     else aiStatus("Not downloaded yet. Connect to wifi, then press Download and start.");
   })();
 
