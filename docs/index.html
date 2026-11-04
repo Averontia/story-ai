@@ -179,6 +179,24 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .char-profile { font-size: 14px; line-height: 1.55; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
 .char-profile b { color: var(--ink); }
 .char-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.char-card[role="button"] { cursor: pointer; transition: border-color .15s; }
+.char-card[role="button"]:hover, .char-card[role="button"]:focus-visible { border-color: var(--accent); outline: none; }
+.avatar svg { width: 100%; height: 100%; display: block; fill: #fff; opacity: .92; }
+.avatar { overflow: hidden; }
+.avatar.big { width: 64px; height: 64px; }
+.char-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 14px; line-height: 1.45; }
+.char-facts dt { color: var(--muted); font-size: 12px; font-weight: 600; padding-top: 2px; }
+.char-facts dd { margin: 0; }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #fff; background: var(--accent); border-radius: 6px; padding: 1px 6px; vertical-align: 1px; }
+.badge.old { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.char-dialog { width: min(600px, 100%); max-height: 88vh; grid-template-columns: minmax(0, 1fr); box-sizing: border-box; }
+.char-dialog .char-top { min-width: 0; }
+.char-name-input { font-family: var(--font-story); font-size: 22px; font-weight: 600; flex: 1; min-width: 0; }
+.char-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; margin-top: 12px; }
+.char-field { display: grid; gap: 4px; grid-column: 1 / -1; }
+.char-field.half { grid-column: auto; }
+.char-field .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.char-field textarea, .char-field input, .char-field select { font-size: 14px; width: 100%; box-sizing: border-box; }
 .char-card textarea, .char-card input[type="text"] { font-size: 14px; }
 .search { max-width: 260px; }
 
@@ -190,6 +208,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .map-below { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 14px; }
 .place-card { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
 .place-card h3 { margin: 0 0 4px; font-family: var(--font-story); font-size: 18px; }
+.place-card .trip { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.map-km { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.map-km input { width: 84px; }
 .place-card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
 .place-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
@@ -430,6 +451,8 @@ progress[hidden] { display: none; }
           <div class="label" style="margin-bottom:6px">Places</div>
           <div class="place-list" id="placeList"></div>
           <div class="legend" id="legend" style="margin-top:12px"></div>
+          <label class="map-km" id="mapKmRow" hidden>Map width <input type="number" id="mapKm" min="0.01" step="any" inputmode="decimal"> miles</label>
+          <div class="hint" style="margin-top:4px">The AI uses this map for travel times and what's seen on the way.</div>
         </div>
       </div>
     </div>
@@ -448,6 +471,21 @@ progress[hidden] { display: none; }
     </div>
     <div class="saved-list" id="savedList"></div>
     <div class="composer-row"><span class="spacer"></span><button class="btn" id="savedClose" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" id="charDialog" hidden>
+  <div class="dialog char-dialog" role="dialog" aria-modal="true" aria-label="Character">
+    <div id="charDialogBody"></div>
+    <div class="err" id="charErr"></div>
+    <div class="composer-row">
+      <button class="btn small" id="charFillBtn" type="button">Fill in with AI</button>
+      <button class="btn small ghost" id="charRead" type="button">Read aloud</button>
+      <button class="btn small ghost" id="charDelete" type="button">Remove</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="charClose" type="button">Done</button>
+    </div>
+    <div class="hint">Changes save as you type. The AI keeps "Wearing now", "Condition", "Carrying" and "Where now" up to date as the story goes.</div>
   </div>
 </div>
 
@@ -592,6 +630,75 @@ progress[hidden] { display: none; }
     return out;
   }
 
+  // ---------- character records ----------
+  // The AI keeps the "now" fields up to date after every part; the deeper ones are filled by "Fill in with AI" or by hand.
+  const AI_CHAR_FIELDS = ["role", "sex", "age", "looks", "outfit", "condition", "carrying", "where"];
+  const CHAR_FIELDS = [
+    { k: "role", label: "Role" }, { k: "sex", label: "Sex" }, { k: "age", label: "Age" },
+    { k: "looks", label: "Looks", long: true }, { k: "outfit", label: "Wearing now", long: true },
+    { k: "condition", label: "Condition", long: true }, { k: "carrying", label: "Carrying", long: true },
+    { k: "where", label: "Where now" }, { k: "personality", label: "Personality", long: true },
+    { k: "background", label: "Background", long: true }, { k: "relationships", label: "Relationships", long: true },
+    { k: "details", label: "Notes", long: true }
+  ];
+  function normSex(v) { v = String(v || "").toLowerCase().trim(); return /^(f|female|woman|girl|she)/.test(v) ? "female" : /^(m|male|man|boy|he)\b/.test(v) ? "male" : ""; }
+  function mergeChars(oldList, newList, part) {
+    if (!Array.isArray(newList)) return oldList;
+    const out = oldList.map((o) => { const c = Object.assign({}, o); delete c.fresh; return c; });
+    const blank = /^(none|n\/a|unknown|not mentioned|not stated|nothing|-|same|unchanged)\.?$/i;
+    newList.forEach((e) => {
+      if (!e || !e.name) return;
+      const name = String(e.name).trim(), key = name.toLowerCase();
+      if (!name || /^(the )?(reader|narrator|you|i)$/i.test(name)) return;
+      let c = out.find((o) => o.name.toLowerCase() === key) ||
+        out.find((o) => o.name.toLowerCase().split(/\s+/)[0] === key.split(/\s+/)[0] && key.split(/\s+/)[0].length > 2);
+      if (!c) { c = { name, details: "", changed: {} }; out.push(c); }
+      c.changed = c.changed || {};
+      AI_CHAR_FIELDS.forEach((k) => {
+        let v = k === "sex" ? normSex(e[k]) : String(e[k] == null ? "" : e[k]).trim().slice(0, 160);
+        if (!v || blank.test(v)) return;
+        if ((c[k] || "").toLowerCase() === v.toLowerCase()) return;
+        if (k === "sex" && c.sex) return;   // once known, sex doesn't flip on a model whim
+        if (c[k] && k !== "role") c.changed[k] = part;
+        c[k] = v; c.fresh = true;
+      });
+    });
+    return out;
+  }
+  function firstName(n) { return String(n || "").trim().split(/\s+/)[0] || ""; }
+  function nameIn(name, text) {
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const f = firstName(name);
+    return new RegExp("\\b(" + esc(name) + (f.length > 2 ? "|" + esc(f) : "") + ")\\b", "i").test(text);
+  }
+  function mainChar() {
+    const who = story.scene && story.scene.who;
+    return (who && story.characters.find((c) => nameIn(c.name, who))) || story.characters[0] || null;
+  }
+  function charFull(c) {
+    const head = [c.sex, c.age, c.role].filter(Boolean).join(", ");
+    const bits = [["looks", "looks"], ["outfit", "wearing"], ["condition", "condition"], ["carrying", "carrying"], ["where", "at"],
+      ["personality", "personality"], ["relationships", "relationships"], ["background", "background"], ["details", "notes"]]
+      .filter(([k]) => c[k]).map(([k, l]) => l + ": " + c[k]);
+    return "- " + c.name + (head ? " (" + head + ")" : "") + (bits.length ? ": " + bits.join("; ") : "");
+  }
+  function charBrief(c) { return "- " + c.name + (c.role ? " (" + c.role + ")" : "") + (c.where ? ", at " + c.where : ""); }
+  // Everyone the moment is about gets their full record; the rest get one line.
+  function castText(focus, maxChars) {
+    const list = story.characters.filter((c) => c.name && c.name.trim());
+    if (!list.length) return "(none yet)";
+    const f = String(focus || "") + " " + ((story.scene && story.scene.present) || "");
+    const main = mainChar();
+    const rel = list.filter((c) => c === main || nameIn(c.name, f));
+    const rest = list.filter((c) => !rel.includes(c));
+    let lines = rel.map(charFull);
+    const total = lines.join("\n").length;
+    if (total > maxChars * 0.8) { const each = Math.floor(maxChars * 0.8 / rel.length); lines = lines.map((l) => l.length > each ? l.slice(0, each - 3) + "..." : l); }
+    let out = lines.join("\n");
+    for (const c of rest) { const l = charBrief(c); if (out.length + l.length + 1 > maxChars) { out += "\n(+ others)"; break; } out += (out ? "\n" : "") + l; }
+    return out;
+  }
+
   // ---------- writing ----------
   // ---------- writing with the on-device AI ----------
   // Small models have a 4,096-token memory, so each part is written from: premise + character/place notes
@@ -631,13 +738,16 @@ progress[hidden] { display: none; }
       story.style ? "STYLE THE READER WANTS: " + story.style : ""
     ].filter(Boolean).join("\n");
     const beats = beatsText(14), scene = sceneText();
+    const focus = (direction || "") + " " + (plan ? (plan.happens || plan.next || "") : "");
+    const travel = first ? "" : travelText(focus);
     const notes = [
       "PREMISE: " + story.premise,
-      "CHARACTERS:\n" + bibleShort(story.characters, 1100),
+      "CHARACTERS:\n" + castText(focus + " " + storySoFar(1200), 1300),
       "PLACES:\n" + bibleShort(story.places, 500),
       story.summary ? "SUMMARY: " + story.summary : "",
       beats ? "EVENTS THAT ALREADY HAPPENED, IN ORDER (do not repeat them):\n" + beats : "",
-      scene ? "CURRENT SCENE: " + scene : ""
+      scene ? "CURRENT SCENE: " + scene : "",
+      travel
     ].filter(Boolean).join("\n\n");
     let ask;
     if (first) {
@@ -679,8 +789,9 @@ progress[hidden] { display: none; }
       driveRule(),
       paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
-      "CHARACTERS:\n" + bibleShort(story.characters, 700),
+      "CHARACTERS:\n" + castText(storySoFar(1200), 800),
       sceneText() ? "CURRENT SCENE: " + sceneText() : "",
+      travelText(""),
       beats ? "EVENTS THAT ALREADY HAPPENED (do not repeat them):\n" + beats : "",
       "LATEST PART OF THE STORY:\n" + storySoFar(1500),
       "",
@@ -697,10 +808,12 @@ progress[hidden] { display: none; }
       "Judge realism against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
       paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
-      "CHARACTERS:\n" + bibleShort(story.characters, 700),
+      "CHARACTERS:\n" + castText(direction + " " + storySoFar(1200), 800),
       sceneText() ? "CURRENT SCENE: " + sceneText() : "",
+      travelText(direction),
       "LATEST PART OF THE STORY:\n" + storySoFar(1500),
       "THE READER'S DIRECTION: " + direction,
+      "If the direction changes a character (new clothes, an injury, a new item), make that part of what happens. Use the travel facts above for how long a trip takes and what is seen on the way.",
       "",
       "Reply with JSON:",
       "- verdict: accepted if it happens as the reader asked; adjusted if it only partly works or happens differently; refused if it fails or cannot happen.",
@@ -725,7 +838,10 @@ progress[hidden] { display: none; }
       scene: { type: "object", properties: {
         who: { type: "string" }, where: { type: "string" }, came_from: { type: "string" }, heading_to: { type: "string" }, present: { type: "string" } },
         required: ["who", "where", "came_from", "heading_to", "present"] },
-      characters: { type: "array", items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" }, details: { type: "string" } }, required: ["name", "role", "details"] } },
+      characters: { type: "array", maxItems: 8, items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" },
+        sex: { type: "string", enum: ["male", "female", "unknown"] }, age: { type: "string" }, looks: { type: "string" }, outfit: { type: "string" },
+        condition: { type: "string" }, carrying: { type: "string" }, where: { type: "string" } },
+        required: ["name", "role", "sex", "age", "looks", "outfit", "condition", "carrying", "where"] } },
       places: { type: "array", items: { type: "object", properties: { name: { type: "string" }, details: { type: "string" } }, required: ["name", "details"] } }
     },
     required: ["title", "beat", "summary", "scene", "characters", "places"]
@@ -752,15 +868,15 @@ progress[hidden] { display: none; }
       "CURRENT TITLE: " + (story.title || "(none yet)"),
       "SUMMARY SO FAR: " + (story.summary || "(the story has just started)"),
       sceneText() ? "SCENE BEFORE THIS PART: " + sceneText() : "",
-      "KNOWN CHARACTERS:\n" + bibleShort(story.characters, 1100),
+      "KNOWN CHARACTERS:\n" + castText(newText, 1300),
       "KNOWN PLACES:\n" + bibleShort(story.places, 500),
-      "NEWEST PART:\n" + newText.slice(-3600),
+      "NEWEST PART:\n" + newText.slice(-3000),
       "Fill in the JSON:",
       "- title: keep the current title if there is one, otherwise invent a short one.",
       "- beat: the single most important thing that happened in the newest part, in one short sentence (under 20 words).",
       "- summary: the whole story so far in under 120 words, updating the old summary with the newest part.",
       "- scene: where things stand at the END of the newest part. who = the main character's name; where = where they are now; came_from = the place they were before that; heading_to = where they are trying to go, or empty; present = who else is with them, or empty.",
-      "- characters: every named character, keeping the known ones with the same names. role is 2-5 words. details is under 30 words: looks, condition, what they carry, where they are now.",
+      "- characters: only the characters who appear in the newest part, using the same names as the known ones. Each field is short. role: 2-5 words. sex: male, female or unknown. age: a number or a word like teen, or empty. looks: body, face and hair, under 15 words. outfit: what they are wearing at the end of the part, under 12 words; keep the known outfit unless they changed clothes. condition: health, injuries and mood, under 10 words. carrying: what they hold or carry, under 10 words, or empty. where: where they are at the end of the part.",
       "- places: every named place, details under 20 words."
     ].filter(Boolean).join("\n");
   }
@@ -907,7 +1023,7 @@ progress[hidden] { display: none; }
     notesBusy = true;
     if (!busy) $("contHint").textContent = hintText();
     try {
-      const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1000, temperature: 0.3 });
+      const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1400, temperature: 0.3 });
       if (!story.turns.includes(turn)) return;   // the part was undone meanwhile
       if (typeof meta.beat === "string" && meta.beat.trim()) turn.beat = meta.beat.trim().slice(0, 200);
       if (meta.title && !story.title) story.title = String(meta.title).slice(0, 80);
@@ -917,8 +1033,9 @@ progress[hidden] { display: none; }
         ["who", "where", "came_from", "heading_to", "present"].forEach((k) => { s[k] = String(meta.scene[k] || "").trim().slice(0, 80); });
         story.scene = s;
       }
-      story.characters = mergeList(story.characters, meta.characters);
+      story.characters = mergeChars(story.characters, meta.characters, story.turns.indexOf(turn) + 1);
       story.places = mergeList(story.places, meta.places);
+      syncMap();
       if (!busy) renderStory();
       renderBible(); renderCharacters(); renderMapMeta(); persist();
     } catch (e) {
@@ -1283,7 +1400,7 @@ progress[hidden] { display: none; }
   $("savedBtn").addEventListener("click", openSaved);
   $("savedClose").addEventListener("click", () => { $("savedDialog").hidden = true; });
   $("savedDialog").addEventListener("click", (e) => { if (e.target === $("savedDialog")) $("savedDialog").hidden = true; });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("savedDialog").hidden = true; } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("savedDialog").hidden = true; if (!$("charDialog").hidden) closeChar(); } });
   $("copyBtn").addEventListener("click", async () => {
     const text = (story.title ? story.title + "\n\n" : "") + story.turns.map((t) => t.paragraphs.join("\n\n")).join("\n\n");
     try { await navigator.clipboard.writeText(text || ""); $("copyBtn").textContent = "Copied"; }
@@ -1354,80 +1471,135 @@ progress[hidden] { display: none; }
     if (!list.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = story.characters.length ? "No one matches that search." : "No characters yet. Start a story and they'll show up here."; grid.append(e); return; }
     list.forEach((c) => grid.append(charCard(c)));
   }
-  function charCard(c, editing) {
-    const card = document.createElement("article"); card.className = "char-card";
-    const top = document.createElement("div"); top.className = "char-top";
-    const av = document.createElement("div"); av.className = "avatar"; av.textContent = initials(c.name);
+  // Head-and-shoulders silhouettes, picked by the character's sex.
+  const SILHOUETTE = {
+    male: '<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M17.6 20c0-6.6 3.6-11 8.4-11s8.4 4.4 8.4 11c0 5.8-3.5 10.6-8.4 10.6S17.6 25.8 17.6 20z"/><path d="M17.2 18.6C17.2 11.4 20.8 7 26 7s8.8 4.2 8.8 11.4c-1.6-3.4-4.4-5-8.8-5s-7.2 1.6-8.8 5.2z"/><path d="M22.4 28h7.2v9h-7.2z"/><path d="M2 52c.4-9 5.5-14.6 14-16.4 3-.6 6.4-1 10-1s7 .4 10 1c8.5 1.8 13.6 7.4 14 16.4z"/></svg>',
+    female: '<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M26 7.5c-7.6 0-12.6 5.6-12.6 13.4 0 4.6-.6 9.6-3.2 14.8 2.8 2.2 6.2 3.2 9.4 3.4L26 37l6.4 2.1c3.2-.2 6.6-1.2 9.4-3.4-2.6-5.2-3.2-10.2-3.2-14.8 0-7.8-5-13.4-12.6-13.4z"/><path d="M8.5 52c.6-8.6 6-13.8 13.2-15.2h8.6C37.5 38.2 42.9 43.4 43.5 52z"/></svg>',
+    unknown: '<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="19.5" r="9.5"/><path d="M6.5 52c.7-10.4 8.2-16.8 19.5-16.8S44.8 41.6 45.5 52z"/></svg>'
+  };
+  function avatarEl(c, big) {
+    const av = document.createElement("div"); av.className = "avatar" + (big ? " big" : "");
+    av.innerHTML = SILHOUETTE[c.sex === "male" || c.sex === "female" ? c.sex : "unknown"];
     av.style.background = AVATAR_COLORS[hash(c.name.toLowerCase()) % AVATAR_COLORS.length];
+    av.title = c.sex === "male" ? "Man" : c.sex === "female" ? "Woman" : "Not known yet";
+    return av;
+  }
+  // Older saves kept a five-line profile as one block of text; spread it into the separate fields once.
+  function migrateChar(c) {
+    if (!c.profile) return;
+    const map = { appearance: "looks", personality: "personality", background: "background", relationships: "relationships" };
+    c.profile.split(/\n+/).forEach((line) => {
+      const m = line.replace(/\*\*/g, "").match(/^\s*([A-Za-z ]{3,24}):\s*(.+)$/);
+      const k = m && map[m[1].trim().toLowerCase()];
+      if (k && !c[k]) c[k] = m[2].trim();
+    });
+    delete c.profile;
+  }
+  function isNew(c, k) { return c.changed && c.changed[k] && c.changed[k] === story.turns.length; }
+  function charCard(c) {
+    migrateChar(c);
+    const card = document.createElement("article"); card.className = "char-card"; card.tabIndex = 0;
+    card.setAttribute("role", "button"); card.setAttribute("aria-label", "Open " + c.name);
+    const top = document.createElement("div"); top.className = "char-top";
     const nameBox = document.createElement("div");
-    const actions = document.createElement("div"); actions.className = "char-actions";
-    if (editing) {
-      const n = document.createElement("input"); n.type = "text"; n.value = c.name; n.setAttribute("aria-label", "Name");
-      const r = document.createElement("input"); r.type = "text"; r.value = c.role || ""; r.placeholder = "Role, e.g. the town doctor"; r.setAttribute("aria-label", "Role");
-      const d = document.createElement("textarea"); d.value = c.details; d.rows = 5; d.setAttribute("aria-label", "Description");
-      nameBox.append(n); top.append(av, nameBox);
-      const save = document.createElement("button"); save.className = "btn small primary"; save.type = "button"; save.textContent = "Save";
-      const cancel = document.createElement("button"); cancel.className = "btn small ghost"; cancel.type = "button"; cancel.textContent = "Cancel";
-      save.addEventListener("click", () => { c.name = n.value.trim() || c.name; c.role = r.value.trim(); c.details = d.value.trim(); renderBible(); renderCharacters(); queueSave(); });
-      cancel.addEventListener("click", () => card.replaceWith(charCard(c)));
-      actions.append(save, cancel);
-      card.append(top, r, d, actions);
-      return card;
-    }
     const h = document.createElement("h3"); h.textContent = c.name;
     nameBox.append(h);
-    if (c.role) { const r = document.createElement("div"); r.className = "char-role"; r.textContent = c.role; nameBox.append(r); }
-    top.append(av, nameBox);
-    const det = document.createElement("div"); det.className = "char-details"; det.textContent = c.details || "No details yet.";
+    const sub = [c.role, c.sex === "male" ? "man" : c.sex === "female" ? "woman" : "", c.age ? "age " + c.age.replace(/^age\s*/i, "") : ""].filter(Boolean).join(" · ");
+    if (sub) { const r = document.createElement("div"); r.className = "char-role"; r.textContent = sub; nameBox.append(r); }
+    top.append(avatarEl(c), nameBox);
+    card.append(top);
+    const facts = document.createElement("dl"); facts.className = "char-facts";
+    [["outfit", "Wearing"], ["where", "At"], ["condition", "Condition"], ["carrying", "Carrying"]].forEach(([k, label]) => {
+      if (!c[k]) return;
+      const dt = document.createElement("dt"); dt.textContent = label;
+      const dd = document.createElement("dd"); dd.textContent = c[k];
+      if (isNew(c, k)) { const b = document.createElement("span"); b.className = "badge"; b.textContent = "changed"; dd.append(" ", b); }
+      facts.append(dt, dd);
+    });
+    if (facts.children.length) card.append(facts);
+    else { const det = document.createElement("div"); det.className = "char-details"; det.textContent = c.looks || c.details || "No details yet."; card.append(det); }
     const a = appearances(c.name);
     const stats = document.createElement("div"); stats.className = "char-stats";
-    stats.textContent = a.count ? "First appears in part " + a.firstPart + " · in " + a.count + " of " + story.turns.length + " parts" : "Not named in the story text yet";
-    card.append(top, det, stats);
-    if (c.profile) {
-      const pr = document.createElement("div"); pr.className = "char-profile";
-      c.profile.split(/\n+/).filter((l) => l.trim()).forEach((line) => {
-        const p = document.createElement("div");
-        const m = line.match(/^\**([A-Za-z ]{3,24}):\**\s*(.*)$/);
-        if (m) { const b = document.createElement("b"); b.textContent = m[1] + ": "; p.append(b, document.createTextNode(m[2].replace(/\*\*/g, ""))); }
-        else p.textContent = line.replace(/\*\*/g, "");
-        pr.append(p);
-      });
-      card.append(pr);
-    }
-    const prof = document.createElement("button"); prof.className = "btn small"; prof.type = "button";
-    prof.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
-    const edit = document.createElement("button"); edit.className = "btn small ghost"; edit.type = "button"; edit.textContent = "Edit";
-    const read = document.createElement("button"); read.className = "btn small ghost"; read.type = "button"; read.textContent = "Read aloud";
-    const err = document.createElement("div"); err.className = "err";
-    prof.addEventListener("click", () => writeProfile(c, prof, err));
-    edit.addEventListener("click", () => card.replaceWith(charCard(c, true)));
-    read.addEventListener("click", () => speakText(c.name + ". " + (c.role ? c.role + ". " : "") + (c.profile || c.details || "")));
-    actions.append(prof, edit, read);
-    card.append(actions, err);
+    stats.textContent = (a.count ? "First in part " + a.firstPart + " · in " + a.count + " of " + story.turns.length + " parts" : "Not named in the story text yet") + " · Tap for more";
+    card.append(stats);
+    const open = () => openChar(c);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     return card;
   }
-  async function writeProfile(c, btn, err) {
+  let charOpen = null;
+  function openChar(c) {
+    migrateChar(c);
+    charOpen = c;
+    const box = $("charDialogBody"); box.innerHTML = "";
+    const top = document.createElement("div"); top.className = "char-top";
+    const av = avatarEl(c, true);
+    const n = document.createElement("input"); n.type = "text"; n.value = c.name; n.className = "char-name-input"; n.setAttribute("aria-label", "Name");
+    n.addEventListener("input", () => { if (n.value.trim()) { c.name = n.value.trim(); queueSave(); } });
+    top.append(av, n);
+    box.append(top);
+    const form = document.createElement("div"); form.className = "char-form";
+    CHAR_FIELDS.forEach(({ k, label, long }) => {
+      const row = document.createElement("label"); row.className = "char-field";
+      const l = document.createElement("span"); l.className = "label"; l.textContent = label;
+      if (c.changed && c.changed[k]) { const b = document.createElement("span"); b.className = "badge" + (isNew(c, k) ? "" : " old"); b.textContent = "changed in part " + c.changed[k]; l.append(" ", b); }
+      let input;
+      if (k === "sex") {
+        input = document.createElement("select");
+        [["", "Not known"], ["female", "Woman"], ["male", "Man"]].forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; input.append(o); });
+        input.value = c.sex || "";
+        input.addEventListener("change", () => { c.sex = input.value; av.replaceWith(Object.assign(avatarEl(c, true))); queueSave(); });
+      } else {
+        input = document.createElement(long ? "textarea" : "input");
+        if (!long) input.type = "text"; else input.rows = 2;
+        input.value = c[k] || "";
+        input.placeholder = k === "details" ? "Anything else the AI should know" : "";
+        input.addEventListener("input", () => { c[k] = input.value; if (c.changed) delete c.changed[k]; queueSave(); });
+      }
+      if (k === "sex" || k === "age") row.classList.add("half");
+      row.append(l, input); form.append(row);
+    });
+    box.append(form);
+    $("charFillBtn").disabled = false; $("charFillBtn").textContent = "Fill in with AI"; $("charErr").textContent = "";
+    $("charDialog").hidden = false;
+  }
+  function closeChar() {
+    $("charDialog").hidden = true;
+    if (charOpen) { charOpen = null; renderBible(); renderCharacters(); persist(); }
+  }
+  $("charClose").addEventListener("click", closeChar);
+  $("charDialog").addEventListener("click", (e) => { if (e.target === $("charDialog")) closeChar(); });
+  $("charRead").addEventListener("click", () => { const c = charOpen; if (!c) return;
+    speakText(c.name + ". " + CHAR_FIELDS.filter(({ k }) => c[k] && k !== "sex").map(({ k, label }) => label + ": " + c[k] + ".").join(" ")); });
+  $("charDelete").addEventListener("click", async () => { const c = charOpen; if (!c) return;
+    if (!(await confirmBox("Remove " + c.name + " from the characters? The story text stays as it is."))) return;
+    story.characters = story.characters.filter((o) => o !== c); closeChar(); });
+  const PROFILE_SCHEMA = { type: "object", properties: { looks: { type: "string" }, personality: { type: "string" }, background: { type: "string" }, relationships: { type: "string" } },
+    required: ["looks", "personality", "background", "relationships"] };
+  $("charFillBtn").addEventListener("click", async () => {
+    const c = charOpen, btn = $("charFillBtn"), err = $("charErr");
+    if (!c) return;
     if (!sample) { err.textContent = "Start the offline AI first: Settings, then Offline AI."; return; }
-    btn.disabled = true; btn.textContent = "Writing profile...";
+    btn.disabled = true; btn.textContent = "Writing...";
     const prompt = [
-      "Write a character profile for " + c.name + " from the interactive story below.",
-      "Use only what the story establishes. Where the story is silent, you may make small, reasonable inferences that fit, but do not invent major facts.",
-      "Reply with exactly these five lines and nothing else, each about 1-3 sentences:",
-      "Appearance: ...", "Personality: ...", "Background: ...", "Right now: ... (their current situation, condition and whereabouts)", "Relationships: ...",
-      "", "PREMISE: " + story.premise,
-      "", "NOTES ON " + c.name.toUpperCase() + ": " + (c.role ? c.role + ". " : "") + c.details,
-      "", "OTHER CHARACTERS:", bibleText(story.characters.filter((o) => o !== c)),
-      "", "STORY SO FAR:", storySoFar(3000)
+      "Fill in the record for " + c.name + ", a character in the interactive story below. Reply with JSON only.",
+      "Use what the story establishes. Where it is silent you may make small, reasonable guesses that fit, but no major new facts.",
+      "- looks: body, face, hair, under 25 words.", "- personality: 1-2 sentences.", "- background: 1-2 sentences.", "- relationships: who they are to the other characters, 1-2 sentences.",
+      "PREMISE: " + story.premise.slice(0, 500),
+      "CURRENT RECORD: " + charFull(c).slice(2),
+      "OTHER CHARACTERS:\n" + story.characters.filter((o) => o !== c).map(charBrief).join("\n").slice(0, 700),
+      "STORY SO FAR:\n" + storySoFar(2600)
     ].join("\n");
     try {
-      const { text } = await sample(prompt, { maxTokens: 450, temperature: 0.6 });
-      c.profile = text.trim();
-      queueSave(); renderCharacters();
+      const r = await sample.json(prompt, { schema: PROFILE_SCHEMA, maxTokens: 450, temperature: 0.5 });
+      ["looks", "personality", "background", "relationships"].forEach((k) => { const v = String((r && r[k]) || "").trim(); if (v && (!c[k] || k !== "looks")) c[k] = v.slice(0, 400); });
+      queueSave();
+      if (charOpen === c) openChar(c);
     } catch (e) {
-      btn.disabled = false; btn.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
-      if (e && e.code !== "cancelled") err.textContent = e.code === "rate_limited" ? "Too many requests. Try again in a minute." : "Couldn't write the profile. Try again.";
+      btn.disabled = false; btn.textContent = "Fill in with AI";
+      if (e && e.code !== "cancelled") err.textContent = "Couldn't fill it in. Try again.";
     }
-  }
+  });
   $("charSearch").addEventListener("input", renderCharacters);
 
   // ---------- map (the AI lays it out as JSON; the page paints it) ----------
@@ -1537,6 +1709,7 @@ progress[hidden] { display: none; }
       repairMap(m);
       m.seed = Math.floor(Math.random() * 1e9);
       m.atPart = story.turns.length;
+      if (story.map && story.map.km) m.km = story.map.km;
       story.map = m;
       persist();
       $("mapEmpty").hidden = true; $("mapCanvas").hidden = false;
@@ -1563,6 +1736,8 @@ progress[hidden] { display: none; }
         : "The AI draws a map from the places in your story.";
     }
     $("mapEmpty").hidden = !!m; $("mapCanvas").hidden = !m;
+    $("mapKmRow").hidden = !m;
+    if (m && document.activeElement !== $("mapKm")) { const mi = mapKm(m) / 1.609; $("mapKm").value = mi < 1 ? mi.toFixed(2) : mi < 20 ? mi.toFixed(1) : Math.round(mi); }
     if (!m) { $("placeList").innerHTML = '<span class="empty">No places mapped yet.</span>'; $("legend").innerHTML = ""; $("placeCard").innerHTML = '<span class="hint">Tap a place on the map to see what the story knows about it.</span>'; }
   }
   function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
@@ -1582,21 +1757,12 @@ progress[hidden] { display: none; }
     const W = 1200, H = 900; cv.width = W; cv.height = H;
     const ctx = cv.getContext("2d");
     const u = Math.max(1, Math.min(1.7, (W / Math.max(1, cv.getBoundingClientRect().width)) * 0.45));
-    const noise =makeNoise(m.seed || 1), noise2 = makeNoise((m.seed || 1) + 99);
-    const feats = (m.features || []).filter((f) => BIOMES[f.type]).map((f) => ({ t: f.type, x: +f.x || 50, y: +f.y || 50, r: Math.max(2, Math.min(60, +f.r || 10)), label: f.label }));
-    const base = BIOMES[m.base] ? m.base : "plains";
+    const noise2 = makeNoise((m.seed || 1) + 99);
+    const terrain = terrainSampler(m), feats = terrain.feats, base = terrain.base;
     // terrain at low resolution, then scaled up
     const LW = 400, LH = 300, img = ctx.createImageData(LW, LH), grid = new Array(LW * LH);
     for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
-      const ux = x / LW * 100, uy = y / LH * 75 * (100 / 75);
-      const px = x / LW * 100, py = y / LH * 100;
-      let b = base;
-      const wob = (noise(x / 38, y / 38) - .5) * 0.9 + (noise2(x / 12, y / 12) - .5) * 0.35;
-      for (const f of feats) {
-        const dx = px - f.x, dy = (py - f.y) * 0.75;
-        const d = Math.sqrt(dx * dx + dy * dy) / f.r;
-        if (d + wob * (f.t === "building" || f.t === "city" ? .15 : 1) < 1) b = f.t;
-      }
+      const b = terrain(x / LW * 100, y / LH * 100);
       grid[y * LW + x] = b;
       const col = BIOMES[b].c, shade = 0.9 + noise2(x / 6, y / 6) * 0.2;
       const i = (y * LW + x) * 4;
@@ -1685,6 +1851,9 @@ progress[hidden] { display: none; }
     const d = document.createElement("div"); d.textContent = (bible && bible.details) || p.note || "The story hasn't said much about this place yet.";
     card.append(k, h, d);
     if (bible && p.note && bible.details !== p.note) { const n = document.createElement("div"); n.className = "hint"; n.style.marginTop = "6px"; n.textContent = p.note; card.append(n); }
+    const here = mapPlace(story.scene && story.scene.where);
+    if (here && here !== p) { const t = document.createElement("div"); t.className = "trip"; t.textContent = tripText(here, p); card.append(t); }
+    else if (here === p) { const t = document.createElement("div"); t.className = "trip"; t.textContent = "The story is here right now."; card.append(t); }
   }
   function renderPlaceList() {
     const box = $("placeList"); box.innerHTML = "";
@@ -1708,11 +1877,187 @@ progress[hidden] { display: none; }
   function quickMap() {
     $("mapErr").textContent = "";
     if (!story.premise) { $("mapErr").textContent = "Start a story first, so there's a world to map."; return; }
-    story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length });
+    const km = story.map && story.map.km;
+    story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length }, km ? { km } : {});
     persist();
     renderMapMeta();
     drawMap();
   }
+
+  // ---------- the map as facts for the AI: distance, travel time, what's on the way ----------
+  function terrainSampler(m) {
+    const noise = makeNoise(m.seed || 1), noise2 = makeNoise((m.seed || 1) + 99);
+    const feats = (m.features || []).filter((f) => BIOMES[f.type]).map((f) => ({ t: f.type, x: +f.x || 50, y: +f.y || 50, r: Math.max(2, Math.min(60, +f.r || 10)), label: f.label }));
+    const base = BIOMES[m.base] ? m.base : "plains";
+    const at = (px, py) => {   // px, py in map units 0-100 (same maths as the painted map)
+      const x = px * 4, y = py * 3;
+      let b = base;
+      const wob = (noise(x / 38, y / 38) - .5) * 0.9 + (noise2(x / 12, y / 12) - .5) * 0.35;
+      for (const f of feats) {
+        const dx = px - f.x, dy = (py - f.y) * 0.75;
+        if (Math.sqrt(dx * dx + dy * dy) / f.r + wob * (f.t === "building" || f.t === "city" ? .15 : 1) < 1) b = f.t;
+      }
+      return b;
+    };
+    at.feats = feats; at.base = base;
+    return at;
+  }
+  // How wide the map is in km: set by the reader, read from the AI's scale line, or guessed from the setting.
+  function mapKm(m) {
+    if (+m.km > 0) return +m.km;
+    const s = String(m.scale || "").toLowerCase().replace(/,/g, "");
+    const n = s.match(/([\d.]+)\s*(km|kilomet|mi|mile|m\b|meter|metre|ft|feet|foot)/);
+    if (n) { const v = +n[1], u = n[2]; const km = /^(km|kilomet)/.test(u) ? v : /^mi/.test(u) ? v * 1.609 : /^(ft|feet|foot)/.test(u) ? v * 0.0003048 : v / 1000; if (km > 0) return km; }
+    if (m.base === "building") return 0.15;
+    const t = (story.premise + " " + story.summary).toLowerCase();
+    if (/\b(continent|kingdom|empire|realm|galaxy|planet|world)\b/.test(t)) return 800;
+    if (/\b(city|town|suburb|neighbou?rhood|school|prom|village)\b/.test(t)) return 12;
+    return 40;
+  }
+  function stripThe(s) { return String(s || "").toLowerCase().replace(/^the\s+/, "").trim(); }
+  function mapPlace(name) {
+    const m = story.map; if (!m || !name) return null;
+    const n = stripThe(name);
+    if (!n) return null;
+    return (m.places || []).find((p) => stripThe(p.name) === n) ||
+      (m.places || []).find((p) => { const q = stripThe(p.name); return q.length > 3 && (n.includes(q) || q.includes(n)); }) || null;
+  }
+  const GENERIC = /^(house|home|room|road|street|city|town|village|forest|river|lake|school|store|shop|place|building|hall|park|north|south|east|west|old|new|great|little)$/;
+  function placesIn(text) {
+    const m = story.map; if (!m || !text) return [];
+    const t = text.toLowerCase(), found = [];
+    (m.places || []).forEach((p) => {
+      const q = stripThe(p.name); if (!q) return;
+      let i = t.indexOf(q);
+      if (i < 0) {   // a distinctive word of the name, e.g. "Juliet's" for "Juliet's house"
+        const words = q.split(/\s+/).filter((w) => w.length >= 4 && !GENERIC.test(w.replace(/'s$/, "")));
+        for (const w of words) {
+          if ((m.places || []).filter((o) => stripThe(o.name).includes(w)).length > 1) continue;
+          const j = t.search(new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b"));
+          if (j >= 0) { i = j; break; }
+        }
+      }
+      if (i >= 0) found.push({ p, i });
+    });
+    return found.sort((a, b) => a.i - b.i).map((f) => f.p);
+  }
+  function roadRoute(a, b) {
+    const m = story.map, key = (p) => stripThe(p.name), adj = {};
+    (m.roads || []).forEach((r) => { if (!Array.isArray(r)) return; const x = mapPlace(r[0]), y = mapPlace(r[1]); if (!x || !y) return;
+      (adj[key(x)] = adj[key(x)] || []).push(y); (adj[key(y)] = adj[key(y)] || []).push(x); });
+    const prev = { [key(a)]: null }, queue = [a];
+    while (queue.length) { const c = queue.shift(); if (c === b) break;
+      (adj[key(c)] || []).forEach((n) => { if (!(key(n) in prev)) { prev[key(n)] = c; queue.push(n); } }); }
+    if (!(key(b) in prev)) return null;
+    const path = []; for (let c = b; c; c = prev[key(c)]) path.unshift(c);
+    return path;
+  }
+  const BIOME_WORDS = { water: "water", plains: "open country", forest: "forest", hills: "hills", mountains: "mountains", snow: "snow and ice",
+    desert: "desert", swamp: "swamp", city: "town streets and buildings", building: "buildings" };
+  function fmtDist(km) {
+    if (km < 0.8) { const ft = Math.round(km * 3281 / 10) * 10; return "about " + ft + " feet (" + Math.round(km * 1000) + " m)"; }
+    const mi = km / 1.609;
+    return "about " + (mi < 10 ? mi.toFixed(1).replace(/\.0$/, "") : Math.round(mi)) + " miles (" + (km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km)) + " km)";
+  }
+  function fmtTime(h, perDay) {
+    if (h < 1 / 60) return "under a minute";
+    if (h < 1) return "about " + Math.max(1, Math.round(h * 60 / 5) * 5 || 1) + " minutes";
+    if (perDay && h > perDay * 1.2) return "about " + Math.round(h / perDay) + " days (travelling " + perDay + " hours a day)";
+    return "about " + (h < 3 ? (Math.round(h * 2) / 2) : Math.round(h)) + " hours";
+  }
+  function trip(a, b) {
+    const m = story.map, sample = terrainSampler(m), km1 = mapKm(m) / 100;
+    const road = roadRoute(a, b);
+    const straight = Math.hypot(b.x - a.x, (b.y - a.y) * 0.75);
+    let pts = road && road.length > 1 ? road : [a, b];
+    let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, (pts[i].y - pts[i - 1].y) * 0.75);
+    const byRoad = road && road.length > 1 && len < straight * 2.5;
+    if (!byRoad) { pts = [a, b]; len = straight; }
+    const runs = [], labels = [], passing = [];
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1], p1 = pts[i], segLen = Math.hypot(p1.x - p0.x, (p1.y - p0.y) * 0.75), steps = Math.max(2, Math.ceil(segLen));
+      if (i > 1 && !passing.includes(p0.name)) passing.push(p0.name);
+      for (let s = 0; s <= steps; s++) {
+        const x = p0.x + (p1.x - p0.x) * s / steps, y = p0.y + (p1.y - p0.y) * s / steps, bio = sample(x, y);
+        if (runs.length && runs[runs.length - 1].b === bio) runs[runs.length - 1].n++; else runs.push({ b: bio, n: 1 });
+        sample.feats.forEach((f) => { if (f.label && Math.hypot(x - f.x, (y - f.y) * 0.75) < f.r * 0.8 && !labels.includes(f.label)) labels.push(f.label); });
+        (m.places || []).forEach((p) => { if (p !== a && p !== b && !passing.includes(p.name) && Math.hypot(x - p.x, (y - p.y) * 0.75) < 4) passing.push(p.name); });
+      }
+    }
+    const total = runs.reduce((s, r) => s + r.n, 0), seq = [];
+    runs.filter((r) => r.n / total >= 0.08).forEach((r) => { if (seq[seq.length - 1] !== r.b) seq.push(r.b); });
+    const km = len * km1;
+    return { km, byRoad, seq, labels, passing, water: !byRoad && runs.some((r) => r.b === "water" && r.n / total > 0.04) };
+  }
+  function tripText(a, b) {
+    const t = trip(a, b);
+    const world = (story.premise + " " + storySoFar(3000)).toLowerCase();
+    const modern = /\b(car|cars|truck|drive|drove|driving|phone|bus|train|highway|prom|police|gun|apartment|taxi|subway)\b/.test(world);
+    const horse = /\b(horse|horses|ride|riding|cart|wagon|carriage)\b/.test(world) || !modern;
+    const times = [];
+    if (t.km < 0.05) times.push("a few steps");
+    else {
+      times.push(fmtTime(t.km / 5, 8) + " on foot");
+      if (modern && t.km > 0.4) times.push(fmtTime(t.km / (t.km < 15 ? 35 : 70)) + " by car");
+      if (horse && t.km > 1) times.push(fmtTime(t.km / 12, 9) + " on horseback");
+    }
+    let s = "From " + a.name + " to " + b.name + " is " + fmtDist(t.km) + (t.byRoad ? " by road" : " in a straight line") + ": " + times.join(", ") + ".";
+    if (t.seq.length) s += " On the way: " + t.seq.map((x) => (x === "water" && t.byRoad ? "a bridge over water" : BIOME_WORDS[x] || x)).join(", then ") + (t.labels.length ? " (" + t.labels.join(", ") + ")" : "") + ".";
+    if (t.passing.length) s += " Passes " + t.passing.join(", ") + ".";
+    if (t.water) s += " The straight line crosses water, so the trip needs a bridge, a boat or a way around.";
+    return s;
+  }
+  // The trip a moment of the story is about: from where the main character is to the place the text names (or where they're heading).
+  function travelText(text) {
+    const m = story.map;
+    if (!m || !(m.places || []).length) return "";
+    const s = story.scene || {};
+    const here = mapPlace(s.where);
+    const named = placesIn(text);
+    let from = here, to = named.find((p) => p !== here) || null;
+    if (!from && named.length >= 2) { from = named[0]; to = named[1]; }
+    if (!to && !String(text || "").trim()) to = mapPlace(s.heading_to);
+    if (!from || !to || from === to) return "";
+    return "TRAVEL FACTS (from the story's map; use these for how long the trip takes and what is seen on the way): " + tripText(from, to);
+  }
+  // Keep a map around (and up to date) so the AI always has distances to work with.
+  function syncMap() {
+    if (!story.places.length) return;
+    if (!story.map) {
+      if (story.places.length < 2) return;
+      story.map = Object.assign(proceduralMap(), { seed: Math.floor(Math.random() * 1e9), atPart: story.turns.length, auto: true });
+    } else {
+      const m = story.map, here = mapPlace(story.scene && story.scene.where);
+      const r = rng((Date.now() ^ story.places.length) >>> 0);
+      let added = false;
+      story.places.forEach((bp) => {
+        if (mapPlace(bp.name)) return;
+        let best = null;
+        for (let i = 0; i < 30; i++) {   // new places land near where the story is, but not on top of anything
+          const ang = r() * Math.PI * 2, d = 8 + r() * 22;
+          const c = here ? { x: here.x + Math.cos(ang) * d, y: here.y + Math.sin(ang) * d } : { x: 10 + r() * 80, y: 10 + r() * 80 };
+          if (c.x < 6 || c.x > 94 || c.y < 6 || c.y > 94) continue;
+          const near = Math.min(999, ...(m.places || []).map((p) => Math.hypot(p.x - c.x, p.y - c.y)));
+          if (!best || near > best.near) best = { x: c.x, y: c.y, near };
+        }
+        if (!best) best = { x: 50, y: 50 };
+        const p = { name: bp.name, x: Math.round(best.x), y: Math.round(best.y), kind: "landmark", note: bp.details || "" };
+        let nearest = null, nd = Infinity;
+        (m.places || []).forEach((o) => { const d = Math.hypot(o.x - p.x, o.y - p.y); if (d < nd) { nd = d; nearest = o; } });
+        m.places = (m.places || []).concat(p);
+        if (nearest) m.roads = (m.roads || []).concat([[p.name, nearest.name]]);
+        added = true;
+      });
+      if (added) m.atPart = story.turns.length;
+    }
+    renderMapMeta();
+    if (!$("mapView").hidden) drawMap();
+  }
+  $("mapKm").addEventListener("change", (e) => {
+    const mi = parseFloat(e.target.value);
+    if (story.map && mi > 0) { story.map.km = mi * 1.609; queueSave(); renderMapMeta(); }
+  });
+
   $("mapBtn").addEventListener("click", quickMap);
   $("mapAiBtn").addEventListener("click", generateMap);
   $("mapStop").addEventListener("click", () => { if (mapBusy) mapBusy.abort(); });
