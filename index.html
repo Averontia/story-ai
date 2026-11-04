@@ -141,16 +141,72 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .saved .meta span { color: var(--muted); font-size: 12px; }
 .saved.current { border-color: var(--accent); }
 
-.tabs { display: none; }
+/* Views */
+.views { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.views button { border: 0; background: transparent; border-radius: 7px; padding: 5px 12px; font-weight: 600; font-size: 14px; cursor: pointer; color: var(--muted); }
+.views button.active { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.views .only-phone { display: none; }
+.app { grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); }
+.app > * { min-width: 0; }
+.view { min-height: 0; }
+.view[hidden] { display: none !important; }
+.fullpage { overflow-y: auto; padding: 24px 16px 48px; }
+.fullpage .wide { max-width: 1040px; margin: 0 auto; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { font-family: var(--font-story); font-weight: 600; font-size: 28px; margin: 0; text-wrap: balance; }
+.page-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { flex: 1; border: 0; background: var(--raised); padding: 6px 10px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+
+/* Characters page */
+.char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.char-card { background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; align-content: start; }
+.char-top { display: flex; gap: 12px; align-items: center; }
+.avatar { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-story); font-weight: 600; font-size: 20px; color: #fff; flex: none; }
+.char-top h3 { margin: 0; font-family: var(--font-story); font-size: 19px; line-height: 1.25; }
+.char-role { color: var(--accent); font-size: 13px; font-weight: 600; }
+.char-details { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.char-stats { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.char-profile { font-size: 14px; line-height: 1.55; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
+.char-profile b { color: var(--ink); }
+.char-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.char-card textarea, .char-card input[type="text"] { font-size: 14px; }
+.search { max-width: 260px; }
+
+/* Map page */
+.map-wrap { position: relative; background: #d9cfb4; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.map-wrap canvas { display: block; width: 100%; height: auto; cursor: pointer; touch-action: manipulation; }
+.map-empty { aspect-ratio: 4 / 3; display: grid; place-items: center; text-align: center; padding: 24px; color: #4a4232; font-family: var(--font-story); font-size: 17px; }
+.map-empty[hidden], .map-wrap canvas[hidden] { display: none; }
+.map-below { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 14px; }
+.place-card { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.place-card h3 { margin: 0 0 4px; font-family: var(--font-story); font-size: 18px; }
+.place-card .kind { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
+.place-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(0,0,0,.15); }
 
 @media (max-width: 880px) {
-  .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .tabs { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
-  .tabs .btn { flex: 1; }
+  .main { grid-template-columns: 1fr; }
   aside.desk { border-left: 0; display: none; }
   .main.show-desk aside.desk { display: grid; }
   .main.show-desk .reader { display: none; }
+  .views .only-phone { display: block; }
+  .views { order: 5; width: 100%; }
+  .views button { flex: 1; padding: 6px 4px; }
   .story { font-size: 17px; }
+  .map-below { grid-template-columns: 1fr; }
+  header.bar { gap: 8px; padding: 8px 12px; }
+  .bar-actions { width: 100%; flex-wrap: nowrap; gap: 6px; order: 4; }
+  .bar-actions .btn { flex: 1 1 0; min-width: 0; padding: 5px 2px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .story-title { flex-basis: 0; }
+  .views button { font-size: 13px; }
+  .scroll { padding-top: 18px; }
+  .composer { padding: 10px 12px; }
+  .composer textarea { min-height: 48px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .entry.fresh { transition: border-color 1.5s; }
@@ -162,19 +218,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   <header class="bar">
     <div class="brand">Story <span>AI</span></div>
     <div class="story-title" id="storyTitle">New story</div>
+    <nav class="views" id="views" aria-label="Views">
+      <button type="button" data-view="story" class="active">Story</button>
+      <button type="button" data-view="characters">Characters</button>
+      <button type="button" data-view="map">Map</button>
+      <button type="button" data-view="settings" class="only-phone">Settings</button>
+    </nav>
     <div class="bar-actions">
       <button class="btn small" id="voiceToggle" type="button" aria-pressed="false">Voice: off</button>
-      <button class="btn small" id="copyBtn" type="button">Copy story</button>
+      <button class="btn small" id="copyBtn" type="button">Copy</button>
       <button class="btn small" id="savedBtn" type="button">My stories</button>
       <button class="btn small" id="newBtn" type="button">New story</button>
     </div>
   </header>
 
-  <div class="main" id="main">
-    <div class="tabs" role="tablist">
-      <button class="btn small" id="tabStory" type="button">Story</button>
-      <button class="btn small" id="tabDesk" type="button">Settings &amp; characters</button>
-    </div>
+  <div class="main view" id="main">
 
     <section class="reader">
       <div class="scroll" id="scroll">
@@ -230,6 +288,15 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
     <aside class="desk" id="desk">
       <div class="section">
+        <h2>Display</h2>
+        <div class="seg" id="themeSeg" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="auto">Auto</button>
+          <button type="button" data-theme-choice="light">Light</button>
+          <button type="button" data-theme-choice="dark">Dark</button>
+        </div>
+      </div>
+
+      <div class="section">
         <h2>How it writes</h2>
         <div class="slider-row">
           <div class="slider-head"><label for="paras">Paragraphs per turn</label><output id="parasOut">3</output></div>
@@ -272,6 +339,47 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <p class="hint">Claude updates these after every part. You can edit them, and your changes become fact in the story.</p>
     </aside>
   </div>
+
+  <section class="view fullpage" id="charactersView" hidden>
+    <div class="wide">
+      <div class="page-head">
+        <div>
+          <h1>Characters</h1>
+          <p id="charSummary">Everyone the story has introduced so far.</p>
+        </div>
+        <input type="text" class="search" id="charSearch" placeholder="Search characters" aria-label="Search characters">
+      </div>
+      <div class="char-grid" id="charGrid"></div>
+    </div>
+  </section>
+
+  <section class="view fullpage" id="mapView" hidden>
+    <div class="wide">
+      <div class="page-head">
+        <div>
+          <h1 id="mapTitle">World map</h1>
+          <p id="mapSub">Claude draws a map from the places in your story.</p>
+        </div>
+        <div class="composer-row">
+          <button class="btn primary" id="mapBtn" type="button">Draw the map</button>
+          <button class="btn ghost" id="mapStop" type="button" hidden>Stop</button>
+        </div>
+      </div>
+      <div class="err" id="mapErr"></div>
+      <div class="map-wrap" id="mapWrap">
+        <div class="map-empty" id="mapEmpty">No map yet. Write a few parts of your story, then press "Draw the map".</div>
+        <canvas id="mapCanvas" width="1200" height="900" hidden aria-label="Map of the story world"></canvas>
+      </div>
+      <div class="map-below">
+        <div class="place-card" id="placeCard"><span class="hint">Tap a place on the map to see what the story knows about it.</span></div>
+        <div>
+          <div class="label" style="margin-bottom:6px">Places</div>
+          <div class="place-list" id="placeList"></div>
+          <div class="legend" id="legend" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div class="dialog-backdrop" id="savedDialog" hidden>
@@ -313,7 +421,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   }
   function safeLS(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function loadPrefs() {
-    return Object.assign({ paras: 3, realism: 60, voice: false, voiceName: "", rate: 1 },
+    return Object.assign({ paras: 3, realism: 60, voice: false, voiceName: "", rate: 1, theme: "auto" },
       safeLS(() => JSON.parse(localStorage.getItem(LS_PREFS)) || {}, {}));
   }
   function savePrefs() { safeLS(() => localStorage.setItem(LS_PREFS, JSON.stringify(prefs))); }
@@ -384,7 +492,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       "1. The " + n + " paragraph" + (n === 1 ? "" : "s") + ", separated by one blank line. Plain prose only: no title, no headings, no markdown, no notes.",
       "2. Then a line containing only " + NOTES,
       "3. Then one JSON object, nothing after it:",
-      '{"title": "short story title", "verdict": "accepted" | "adjusted" | "refused" | "none", "verdict_note": "one short plain sentence telling the reader how the realism setting changed their direction, or empty if it happened as asked", "characters": [{"name": "...", "details": "..."}], "places": [{"name": "...", "details": "..."}]}',
+      '{"title": "short story title", "verdict": "accepted" | "adjusted" | "refused" | "none", "verdict_note": "one short plain sentence telling the reader how the realism setting changed their direction, or empty if it happened as asked", "characters": [{"name": "...", "role": "2-5 word role in the story", "details": "..."}], "places": [{"name": "...", "details": "..."}]}',
       'verdict: "none" if there was no direction or this is the opening; "accepted" if it happened as the reader asked; "adjusted" if it happened only partly or differently; "refused" if it failed or could not happen.',
       "characters and places: the FULL updated lists. Keep every existing entry (same names), update details that changed, add anyone or anywhere new that matters. Details are short factual notes: appearance, age, role, relationships, what they carry, injuries or condition, what they know, and where they are now. For places: what it looks like, who is there, what has happened there."
     ].join("\n");
@@ -417,9 +525,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       if (!name || seen.has(key)) return;
       seen.add(key);
       const prev = oldList.find((o) => o.name.toLowerCase() === key);
-      out.push({ name, details: String(e.details || (prev && prev.details) || "").trim(), fresh: !prev || (prev.details !== String(e.details || "").trim()) });
+      const details = String(e.details || (prev && prev.details) || "").trim();
+      out.push(Object.assign({}, prev || {}, { name, details,
+        role: String(e.role || (prev && prev.role) || "").trim(),
+        fresh: !prev || prev.details !== details }));
     });
-    oldList.forEach((o) => { if (!seen.has(o.name.toLowerCase())) out.push({ name: o.name, details: o.details }); });
+    oldList.forEach((o) => { if (!seen.has(o.name.toLowerCase())) { const c = Object.assign({}, o); delete c.fresh; out.push(c); } });
     return out;
   }
 
@@ -466,6 +577,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       live.remove();
       renderStory();
       renderBible();
+      renderCharacters();
+      renderMapMeta();
       persist();
       if (res.truncated) showErr("That part got cut off early. Try fewer paragraphs.");
       if (prefs.voice) speakTurn(story.turns.length - 1);
@@ -716,6 +829,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     synth.speak(end);
   }
   function speakTurn(ti) { speakFrom(ti, 0, true); }
+  function speakText(text) {
+    if (!synth) return;
+    stopSpeaking();
+    const voice = currentVoice();
+    chunks(text).forEach((c) => { const u = new SpeechSynthesisUtterance(c); if (voice) { u.voice = voice; u.lang = voice.lang; } u.rate = prefs.rate; synth.speak(u); });
+  }
   function stopSpeaking() { if (synth) { speakToken++; synth.cancel(); } markReading(-1, -1); }
   function markReading(t, p) {
     document.querySelectorAll(".story p.reading").forEach((el) => el.classList.remove("reading"));
@@ -724,7 +843,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     if (el) { el.classList.add("reading"); if (prefs.voice) el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
   }
   function renderVoiceToggle() {
-    $("voiceToggle").textContent = "Voice: " + (prefs.voice ? "on" : "off");
+    $("voiceToggle").textContent = "Voice " + (prefs.voice ? "on" : "off");
     $("voiceToggle").classList.toggle("on", prefs.voice);
     $("voiceToggle").setAttribute("aria-pressed", String(prefs.voice));
   }
@@ -738,6 +857,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     $("beginHint").textContent = "Writes " + prefs.paras + " paragraph" + (prefs.paras === 1 ? "" : "s") + ", then waits for you.";
     $("contHint").textContent = busy ? "Writing..." : hintText();
     renderVoiceToggle();
+    renderCharacters();
+    renderMapMeta();
+    if (story.map && !$("mapView").hidden) drawMap();
   }
 
   $("paras").addEventListener("input", (e) => { prefs.paras = +e.target.value; savePrefs(); renderAll(); });
@@ -815,12 +937,355 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     const text = (story.title ? story.title + "\n\n" : "") + story.turns.map((t) => t.paragraphs.join("\n\n")).join("\n\n");
     try { await navigator.clipboard.writeText(text || ""); $("copyBtn").textContent = "Copied"; }
     catch (e) { $("copyBtn").textContent = "Copy failed"; }
-    setTimeout(() => { $("copyBtn").textContent = "Copy story"; }, 1600);
+    setTimeout(() => { $("copyBtn").textContent = "Copy"; }, 1600);
   });
   $("addChar").addEventListener("click", () => addEntry(story.characters));
   $("addPlace").addEventListener("click", () => addEntry(story.places));
-  $("tabStory").addEventListener("click", () => $("main").classList.remove("show-desk"));
-  $("tabDesk").addEventListener("click", () => $("main").classList.add("show-desk"));
+  // ---------- theme ----------
+  const hostTheme = document.documentElement.getAttribute("data-theme");
+  function applyTheme() {
+    const root = document.documentElement;
+    if (prefs.theme === "light" || prefs.theme === "dark") root.setAttribute("data-theme", prefs.theme);
+    else if (hostTheme) root.setAttribute("data-theme", hostTheme);
+    else root.removeAttribute("data-theme");
+    document.querySelectorAll("#themeSeg button").forEach((b) => {
+      const on = b.dataset.themeChoice === prefs.theme;
+      b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
+    });
+    if (story.map && !$("mapView").hidden) drawMap();
+  }
+  $("themeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-theme-choice]"); if (!b) return;
+    prefs.theme = b.dataset.themeChoice; savePrefs(); applyTheme();
+  });
+
+  // ---------- views ----------
+  const VIEWS = ["story", "characters", "map", "settings"];
+  function showView(name) {
+    if (!VIEWS.includes(name)) name = "story";
+    $("main").hidden = !(name === "story" || name === "settings");
+    $("main").classList.toggle("show-desk", name === "settings");
+    $("charactersView").hidden = name !== "characters";
+    $("mapView").hidden = name !== "map";
+    document.querySelectorAll("#views button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+    if (name === "characters") renderCharacters();
+    if (name === "map") { renderMapMeta(); if (story.map) requestAnimationFrame(drawMap); }
+    if (name === "story") scrollDown();
+  }
+  $("views").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-view]"); if (!b) return;
+    const name = b.dataset.view;
+    showView(name);
+    try { history.replaceState(null, "", name === "story" ? location.pathname + location.search : "#" + name); } catch (err) { /* address bar not available */ }
+  });
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+
+  // ---------- characters page ----------
+  const AVATAR_COLORS = ["#2f6f76", "#8a5a1f", "#5b4b8a", "#8a3b3b", "#3f6b3a", "#365a8a", "#7a4a6e", "#5e6b2f"];
+  function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function initials(name) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?"; }
+  function appearances(name) {
+    const first = name.split(/\s+/)[0].toLowerCase();
+    const re = new RegExp("\\b" + first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+    let firstPart = 0, count = 0;
+    story.turns.forEach((t, i) => { if (re.test(t.paragraphs.join(" "))) { count++; if (!firstPart) firstPart = i + 1; } });
+    return { firstPart, count };
+  }
+  function renderCharacters() {
+    const grid = $("charGrid");
+    if (!grid || $("charactersView").hidden) return;
+    const q = $("charSearch").value.trim().toLowerCase();
+    const list = story.characters.filter((c) => c.name.trim() && (!q || (c.name + " " + (c.role || "") + " " + c.details).toLowerCase().includes(q)));
+    $("charSummary").textContent = story.characters.length
+      ? story.characters.length + " character" + (story.characters.length === 1 ? "" : "s") + " in " + (story.title || "this story") + "."
+      : "Characters appear here as the story introduces them.";
+    grid.innerHTML = "";
+    if (!list.length) { const e = document.createElement("div"); e.className = "empty"; e.textContent = story.characters.length ? "No one matches that search." : "No characters yet. Start a story and they'll show up here."; grid.append(e); return; }
+    list.forEach((c) => grid.append(charCard(c)));
+  }
+  function charCard(c, editing) {
+    const card = document.createElement("article"); card.className = "char-card";
+    const top = document.createElement("div"); top.className = "char-top";
+    const av = document.createElement("div"); av.className = "avatar"; av.textContent = initials(c.name);
+    av.style.background = AVATAR_COLORS[hash(c.name.toLowerCase()) % AVATAR_COLORS.length];
+    const nameBox = document.createElement("div");
+    const actions = document.createElement("div"); actions.className = "char-actions";
+    if (editing) {
+      const n = document.createElement("input"); n.type = "text"; n.value = c.name; n.setAttribute("aria-label", "Name");
+      const r = document.createElement("input"); r.type = "text"; r.value = c.role || ""; r.placeholder = "Role, e.g. the town doctor"; r.setAttribute("aria-label", "Role");
+      const d = document.createElement("textarea"); d.value = c.details; d.rows = 5; d.setAttribute("aria-label", "Description");
+      nameBox.append(n); top.append(av, nameBox);
+      const save = document.createElement("button"); save.className = "btn small primary"; save.type = "button"; save.textContent = "Save";
+      const cancel = document.createElement("button"); cancel.className = "btn small ghost"; cancel.type = "button"; cancel.textContent = "Cancel";
+      save.addEventListener("click", () => { c.name = n.value.trim() || c.name; c.role = r.value.trim(); c.details = d.value.trim(); renderBible(); renderCharacters(); queueSave(); });
+      cancel.addEventListener("click", () => card.replaceWith(charCard(c)));
+      actions.append(save, cancel);
+      card.append(top, r, d, actions);
+      return card;
+    }
+    const h = document.createElement("h3"); h.textContent = c.name;
+    nameBox.append(h);
+    if (c.role) { const r = document.createElement("div"); r.className = "char-role"; r.textContent = c.role; nameBox.append(r); }
+    top.append(av, nameBox);
+    const det = document.createElement("div"); det.className = "char-details"; det.textContent = c.details || "No details yet.";
+    const a = appearances(c.name);
+    const stats = document.createElement("div"); stats.className = "char-stats";
+    stats.textContent = a.count ? "First appears in part " + a.firstPart + " · in " + a.count + " of " + story.turns.length + " parts" : "Added by you";
+    card.append(top, det, stats);
+    if (c.profile) {
+      const pr = document.createElement("div"); pr.className = "char-profile";
+      c.profile.split(/\n+/).filter((l) => l.trim()).forEach((line) => {
+        const p = document.createElement("div");
+        const m = line.match(/^\**([A-Za-z ]{3,24}):\**\s*(.*)$/);
+        if (m) { const b = document.createElement("b"); b.textContent = m[1] + ": "; p.append(b, document.createTextNode(m[2].replace(/\*\*/g, ""))); }
+        else p.textContent = line.replace(/\*\*/g, "");
+        pr.append(p);
+      });
+      card.append(pr);
+    }
+    const prof = document.createElement("button"); prof.className = "btn small"; prof.type = "button";
+    prof.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
+    const edit = document.createElement("button"); edit.className = "btn small ghost"; edit.type = "button"; edit.textContent = "Edit";
+    const read = document.createElement("button"); read.className = "btn small ghost"; read.type = "button"; read.textContent = "Read aloud";
+    const err = document.createElement("div"); err.className = "err";
+    prof.addEventListener("click", () => writeProfile(c, prof, err));
+    edit.addEventListener("click", () => card.replaceWith(charCard(c, true)));
+    read.addEventListener("click", () => speakText(c.name + ". " + (c.role ? c.role + ". " : "") + (c.profile || c.details || "")));
+    actions.append(prof, edit, read);
+    card.append(actions, err);
+    return card;
+  }
+  async function writeProfile(c, btn, err) {
+    if (!sample) { err.textContent = "Open this page from its claude.ai link to use Claude."; return; }
+    btn.disabled = true; btn.textContent = "Writing profile...";
+    const prompt = [
+      "Write a character profile for " + c.name + " from the interactive story below.",
+      "Use only what the story establishes. Where the story is silent, you may make small, reasonable inferences that fit, but do not invent major facts.",
+      "Reply with exactly these five lines and nothing else, each about 1-3 sentences:",
+      "Appearance: ...", "Personality: ...", "Background: ...", "Right now: ... (their current situation, condition and whereabouts)", "Relationships: ...",
+      "", "PREMISE: " + story.premise,
+      "", "NOTES ON " + c.name.toUpperCase() + ": " + (c.role ? c.role + ". " : "") + c.details,
+      "", "OTHER CHARACTERS:", bibleText(story.characters.filter((o) => o !== c)),
+      "", "STORY SO FAR:", storySoFar().slice(-60000)
+    ].join("\n");
+    try {
+      const { text } = await sample(prompt, { cache: false });
+      c.profile = text.trim();
+      queueSave(); renderCharacters();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = c.profile ? "Rewrite full profile" : "Write full profile";
+      if (e && e.code !== "cancelled") err.textContent = e.code === "rate_limited" ? "Too many requests. Try again in a minute." : "Couldn't write the profile. Try again.";
+    }
+  }
+  $("charSearch").addEventListener("input", renderCharacters);
+
+  // ---------- map (Claude lays it out as JSON; the page paints it) ----------
+  const BIOMES = {
+    water: { c: [126, 166, 190], label: "Water" }, plains: { c: [201, 205, 150], label: "Plains" },
+    forest: { c: [112, 145, 86], label: "Forest" }, hills: { c: [184, 167, 112], label: "Hills" },
+    mountains: { c: [140, 130, 116], label: "Mountains" }, snow: { c: [236, 238, 240], label: "Snow" },
+    desert: { c: [226, 204, 143], label: "Desert" }, swamp: { c: [122, 138, 96], label: "Swamp" },
+    city: { c: [190, 170, 145], label: "Town" }, building: { c: [214, 200, 176], label: "Building" }
+  };
+  let mapBusy = null, mapHits = [];
+  function mapPrompt() {
+    return [
+      "Design a top-down map for the world of this interactive story, to be drawn by a program.",
+      "Choose a scale that fits where the story happens: a single building, a town, a region, or a whole continent.",
+      "Place every location from the story bible, positioned so that directions, distances and travel in the story make sense. Add a few unnamed terrain features so the map looks like a real place.",
+      "",
+      "PREMISE: " + story.premise,
+      "PLACES IN THE STORY BIBLE:", bibleText(story.places),
+      "CHARACTERS:", bibleText(story.characters),
+      "STORY SO FAR:", storySoFar().slice(-40000) || "(not started)",
+      "",
+      "Reply with only one JSON object in this shape:",
+      '{"name": "map title", "scale": "e.g. about 30 miles across", "base": "plains" | "water" | "forest" | "desert" | "snow" | "building",',
+      ' "features": [{"type": "water|plains|forest|hills|mountains|snow|desert|swamp|city|building", "x": 0-100, "y": 0-100, "r": 3-45, "label": "optional name"}],',
+      ' "places": [{"name": "exact name from the bible when it exists", "x": 0-100, "y": 0-100, "kind": "city|town|village|building|room|landmark|camp|natural", "note": "one short line"}],',
+      ' "roads": [["Place A", "Place B"]]}',
+      "Rules: x runs left to right, y top to bottom, both 0-100 (the map is 4:3). base is the ground everywhere no feature covers (use water for island or coastal worlds, building for stories set inside one building).",
+      "Use 8-20 features; overlap several circles of the same type to make irregular coastlines, ranges and forests. Later features draw on top of earlier ones, so list big water and land masses first.",
+      "Keep places at least 6 units apart and away from the edges (5-95). roads join places that the story suggests are connected; use [] if none. Label only notable features."
+    ].join("\n");
+  }
+  async function generateMap() {
+    $("mapErr").textContent = "";
+    if (!sample) { $("mapErr").textContent = "Claude isn't available here. Open this page from its claude.ai link to draw a map."; return; }
+    if (!story.premise) { $("mapErr").textContent = "Start a story first, so there's a world to map."; return; }
+    const ctl = new AbortController(); mapBusy = ctl;
+    $("mapBtn").disabled = true; $("mapBtn").textContent = "Drawing..."; $("mapStop").hidden = false;
+    $("mapSub").textContent = "Claude is laying out the world. This can take up to a minute.";
+    try {
+      const m = await sample.json(mapPrompt(), { signal: ctl.signal, cache: false });
+      if (!m || !Array.isArray(m.places) || !Array.isArray(m.features)) throw { code: "invalid_json" };
+      m.seed = Math.floor(Math.random() * 1e9);
+      m.atPart = story.turns.length;
+      story.map = m;
+      persist();
+      $("mapEmpty").hidden = true; $("mapCanvas").hidden = false;
+      drawMap();
+    } catch (e) {
+      if (!(e && e.code)) console.error(e);
+      if (e && e.code !== "cancelled") $("mapErr").textContent = e.code === "rate_limited" ? "Too many requests. Try again in a minute." : "Couldn't draw the map that time. Press the button to try again.";
+    } finally {
+      mapBusy = null; $("mapStop").hidden = true; $("mapBtn").disabled = false; renderMapMeta();
+    }
+  }
+  function renderMapMeta() {
+    const m = story.map;
+    $("mapTitle").textContent = m && m.name ? m.name : "World map";
+    if (!mapBusy) {
+      $("mapBtn").textContent = m ? "Redraw the map" : "Draw the map";
+      $("mapSub").textContent = m
+        ? (m.scale ? m.scale + ". " : "") + (story.turns.length > (m.atPart || 0) ? "Drawn at part " + m.atPart + "; the story is now at part " + story.turns.length + ", so redraw to add new places." : "Up to date with the story.")
+        : "Claude draws a map from the places in your story.";
+    }
+    $("mapEmpty").hidden = !!m; $("mapCanvas").hidden = !m;
+    if (!m) { $("placeList").innerHTML = '<span class="empty">No places mapped yet.</span>'; $("legend").innerHTML = ""; $("placeCard").innerHTML = '<span class="hint">Tap a place on the map to see what the story knows about it.</span>'; }
+  }
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+  function makeNoise(seed) {
+    const r = rng(seed), N = 64, g = new Float32Array(N * N);
+    for (let i = 0; i < g.length; i++) g[i] = r();
+    const at = (x, y) => g[((y % N + N) % N) * N + ((x % N + N) % N)];
+    const sm = (t) => t * t * (3 - 2 * t);
+    const v = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi);
+      const a = at(xi, yi), b = at(xi + 1, yi), c = at(xi, yi + 1), d = at(xi + 1, yi + 1);
+      return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf; };
+    return (x, y) => { let s = 0, amp = .5, f = 1; for (let o = 0; o < 4; o++) { s += v(x * f, y * f) * amp; amp /= 2; f *= 2; } return s; };
+  }
+  function drawMap() {
+    const m = story.map, cv = $("mapCanvas");
+    if (!m || cv.hidden) return;
+    const W = 1200, H = 900; cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    const u = Math.max(1, Math.min(1.7, (W / Math.max(1, cv.getBoundingClientRect().width)) * 0.45));
+    const noise =makeNoise(m.seed || 1), noise2 = makeNoise((m.seed || 1) + 99);
+    const feats = (m.features || []).filter((f) => BIOMES[f.type]).map((f) => ({ t: f.type, x: +f.x || 50, y: +f.y || 50, r: Math.max(2, Math.min(60, +f.r || 10)), label: f.label }));
+    const base = BIOMES[m.base] ? m.base : "plains";
+    // terrain at low resolution, then scaled up
+    const LW = 400, LH = 300, img = ctx.createImageData(LW, LH), grid = new Array(LW * LH);
+    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
+      const ux = x / LW * 100, uy = y / LH * 75 * (100 / 75);
+      const px = x / LW * 100, py = y / LH * 100;
+      let b = base;
+      const wob = (noise(x / 38, y / 38) - .5) * 0.9 + (noise2(x / 12, y / 12) - .5) * 0.35;
+      for (const f of feats) {
+        const dx = px - f.x, dy = (py - f.y) * 0.75;
+        const d = Math.sqrt(dx * dx + dy * dy) / f.r;
+        if (d + wob * (f.t === "building" || f.t === "city" ? .15 : 1) < 1) b = f.t;
+      }
+      grid[y * LW + x] = b;
+      const col = BIOMES[b].c, shade = 0.9 + noise2(x / 6, y / 6) * 0.2;
+      const i = (y * LW + x) * 4;
+      img.data[i] = col[0] * shade; img.data[i + 1] = col[1] * shade; img.data[i + 2] = col[2] * shade; img.data[i + 3] = 255;
+    }
+    // coast and edge darkening
+    for (let y = 1; y < LH - 1; y++) for (let x = 1; x < LW - 1; x++) {
+      const b = grid[y * LW + x];
+      if (b !== grid[y * LW + x + 1] || b !== grid[(y + 1) * LW + x]) {
+        const i = (y * LW + x) * 4, k = b === "water" || grid[y * LW + x + 1] === "water" || grid[(y + 1) * LW + x] === "water" ? .62 : .82;
+        img.data[i] *= k; img.data[i + 1] *= k; img.data[i + 2] *= k;
+      }
+    }
+    const off = document.createElement("canvas"); off.width = LW; off.height = LH; off.getContext("2d").putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, W, H);
+    // terrain glyphs
+    const r = rng(m.seed || 7), sx = W / LW, sy = H / LH;
+    ctx.lineWidth = 1.6;
+    for (let gy = 10; gy < H; gy += 26) for (let gx = 10; gx < W; gx += 26) {
+      const x = gx + (r() - .5) * 16, y = gy + (r() - .5) * 16;
+      const b = grid[Math.min(LH - 1, Math.floor(y / sy)) * LW + Math.min(LW - 1, Math.floor(x / sx))];
+      if (b === "mountains" && r() < .4) { ctx.strokeStyle = "rgba(60,52,44,.75)"; ctx.fillStyle = "rgba(245,242,235,.55)"; ctx.beginPath(); ctx.moveTo(x - 11, y + 7); ctx.lineTo(x, y - 9); ctx.lineTo(x + 11, y + 7); ctx.fill(); ctx.stroke(); }
+      else if (b === "hills" && r() < .5) { ctx.strokeStyle = "rgba(90,74,44,.6)"; ctx.beginPath(); ctx.arc(x, y + 4, 8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+      else if (b === "forest" && r() < .8) { ctx.fillStyle = "rgba(48,78,40,.75)"; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "rgba(70,52,30,.7)"; ctx.fillRect(x - 1, y + 4, 2, 4); }
+      else if (b === "swamp" && r() < .5) { ctx.strokeStyle = "rgba(50,70,50,.7)"; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x - 3, y - 5); ctx.lineTo(x - 3, y); ctx.moveTo(x + 2, y - 7); ctx.lineTo(x + 2, y); ctx.stroke(); }
+      else if (b === "water" && r() < .18) { ctx.strokeStyle = "rgba(240,248,252,.45)"; ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.quadraticCurveTo(x - 3, y - 4, x, y); ctx.quadraticCurveTo(x + 3, y + 4, x + 7, y); ctx.stroke(); }
+      else if (b === "desert" && r() < .25) { ctx.strokeStyle = "rgba(150,120,60,.5)"; ctx.beginPath(); ctx.arc(x, y + 6, 9, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke(); }
+      else if (b === "city" && r() < .6) { ctx.fillStyle = "rgba(110,84,60,.75)"; ctx.fillRect(x - 4, y - 4, 8, 7); ctx.beginPath(); ctx.moveTo(x - 5, y - 4); ctx.lineTo(x, y - 9); ctx.lineTo(x + 5, y - 4); ctx.fill(); }
+    }
+    const P = (p) => [Math.max(4, Math.min(96, +p.x || 50)) / 100 * W, Math.max(4, Math.min(96, +p.y || 50)) / 100 * H];
+    const byName = {}; (m.places || []).forEach((p) => { if (p && p.name) byName[String(p.name).toLowerCase()] = p; });
+    // roads
+    ctx.setLineDash([10, 7]); ctx.lineWidth = 3; ctx.strokeStyle = "rgba(110,70,35,.75)";
+    (m.roads || []).forEach((pair) => {
+      if (!Array.isArray(pair)) return;
+      const a = byName[String(pair[0]).toLowerCase()], b = byName[String(pair[1]).toLowerCase()];
+      if (!a || !b) return;
+      const [x1, y1] = P(a), [x2, y2] = P(b), mx = (x1 + x2) / 2 + (r() - .5) * 80, my = (y1 + y2) / 2 + (r() - .5) * 80;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx, my, x2, y2); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    // feature labels
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    feats.forEach((f) => { if (!f.label) return;
+      ctx.font = "italic 600 " + Math.round(Math.min(34, 18 + f.r * .35) * u) + "px Literata, Georgia, serif";
+      ctx.fillStyle = f.t === "water" ? "rgba(30,60,90,.75)" : "rgba(50,40,28,.7)";
+      ctx.fillText(String(f.label), f.x / 100 * W, f.y / 100 * H);
+    });
+    // places
+    mapHits = [];
+    (m.places || []).forEach((p) => {
+      if (!p || !p.name) return;
+      const [x, y] = P(p), kind = String(p.kind || "town");
+      ctx.save(); ctx.translate(x, y); ctx.scale(u, u); ctx.translate(-x, -y);
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#2b2118"; ctx.fillStyle = "#f4ead2";
+      ctx.beginPath();
+      if (kind === "building" || kind === "room") ctx.rect(x - 9, y - 9, 18, 18);
+      else if (kind === "landmark" || kind === "natural") { ctx.moveTo(x, y - 12); ctx.lineTo(x + 11, y + 8); ctx.lineTo(x - 11, y + 8); ctx.closePath(); }
+      else if (kind === "camp") { ctx.moveTo(x - 10, y + 8); ctx.lineTo(x, y - 10); ctx.lineTo(x + 10, y + 8); ctx.closePath(); }
+      else ctx.arc(x, y, kind === "city" ? 12 : kind === "village" ? 7 : 9, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      if (kind === "city") { ctx.fillStyle = "#2b2118"; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      ctx.font = "600 " + Math.round(24 * u) + "px Manrope, 'Segoe UI', sans-serif";
+      const ly = y > H - 60 * u ? y - 28 * u : y + 28 * u;
+      const tw = ctx.measureText(p.name).width / 2 + 14, lx = Math.max(tw, Math.min(W - tw, x));
+      ctx.lineWidth = 5 * u; ctx.strokeStyle = "rgba(250,244,228,.92)"; ctx.strokeText(p.name, lx, ly);
+      ctx.fillStyle = "#231a12"; ctx.fillText(p.name, lx, ly);
+      mapHits.push({ x, y, p });
+    });
+    // frame, compass, scale
+    ctx.lineWidth = 10; ctx.strokeStyle = "rgba(60,45,30,.55)"; ctx.strokeRect(5, 5, W - 10, H - 10);
+    const cx = W - 70, cy = 80;
+    ctx.fillStyle = "rgba(250,244,228,.85)"; ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3a2c1e"; ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx + 9, cy); ctx.lineTo(cx, cy + 30); ctx.lineTo(cx - 9, cy); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#f4ead2"; ctx.beginPath(); ctx.moveTo(cx, cy + 30); ctx.lineTo(cx + 9, cy); ctx.lineTo(cx - 9, cy); ctx.closePath(); ctx.fill();
+    ctx.font = "700 20px Manrope, sans-serif"; ctx.fillStyle = "#3a2c1e"; ctx.fillText("N", cx, cy - 46 < 14 ? 16 : cy - 46);
+    if (m.scale) { ctx.textAlign = "left"; ctx.font = "italic 20px Literata, Georgia, serif"; ctx.lineWidth = 4; ctx.strokeStyle = "rgba(250,244,228,.9)"; ctx.strokeText(String(m.scale), 26, H - 28); ctx.fillStyle = "#3a2c1e"; ctx.fillText(String(m.scale), 26, H - 28); }
+    renderPlaceList(); renderLegend(feats.map((f) => f.t).concat(base));
+  }
+  function placeInfo(p) {
+    const card = $("placeCard"); card.innerHTML = "";
+    const k = document.createElement("div"); k.className = "kind"; k.textContent = p.kind || "place";
+    const h = document.createElement("h3"); h.textContent = p.name;
+    const bible = story.places.find((x) => x.name.toLowerCase() === String(p.name).toLowerCase());
+    const d = document.createElement("div"); d.textContent = (bible && bible.details) || p.note || "The story hasn't said much about this place yet.";
+    card.append(k, h, d);
+    if (bible && p.note && bible.details !== p.note) { const n = document.createElement("div"); n.className = "hint"; n.style.marginTop = "6px"; n.textContent = p.note; card.append(n); }
+  }
+  function renderPlaceList() {
+    const box = $("placeList"); box.innerHTML = "";
+    (story.map.places || []).forEach((p) => { if (!p || !p.name) return;
+      const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = p.name;
+      b.addEventListener("click", () => placeInfo(p)); box.append(b); });
+  }
+  function renderLegend(types) {
+    const box = $("legend"); box.innerHTML = "";
+    [...new Set(types)].forEach((t) => { const s = document.createElement("span"); const i = document.createElement("i");
+      i.style.background = "rgb(" + BIOMES[t].c.join(",") + ")"; s.append(i, document.createTextNode(BIOMES[t].label)); box.append(s); });
+  }
+  $("mapCanvas").addEventListener("click", (e) => {
+    const cv = $("mapCanvas"), rect = cv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * cv.width, y = (e.clientY - rect.top) / rect.height * cv.height;
+    const rad = Math.max(40, 24 * cv.width / rect.width);
+    let best = null, bd = rad * rad;
+    mapHits.forEach((h) => { const d = (h.x - x) ** 2 + (h.y - y) ** 2; if (d < bd) { bd = d; best = h; } });
+    if (best) placeInfo(best.p);
+  });
+  $("mapBtn").addEventListener("click", generateMap);
+  $("mapStop").addEventListener("click", () => { if (mapBusy) mapBusy.abort(); });
 
   if (synth) { loadVoices(); synth.addEventListener ? synth.addEventListener("voiceschanged", loadVoices) : (synth.onvoiceschanged = loadVoices); }
   else loadVoices();
@@ -828,8 +1293,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   // restore the story open last time, from this browser
   const lastId = safeLS(() => localStorage.getItem("storyai.current"), null);
   if (lastId) { const all = safeLS(() => JSON.parse(localStorage.getItem(LS_KEY)) || {}, {}); if (all[lastId]) story = Object.assign(blankStory(), all[lastId]); }
+  applyTheme();
   renderAll();
-  scrollDown();
+  showView(location.hash.slice(1));
 
   // ---------- connect to Claude ----------
   if (!window.claude || !window.claude.use) { $("noClaude").hidden = false; }
