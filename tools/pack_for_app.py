@@ -108,10 +108,25 @@ for q in ["q4f16_1", "q4f32_1"]:
         path, rec = where[name]
         with open(os.path.join(out, path), "rb") as fh:
             fh.seek(rec["byteOffset"]); official = fh.read(rec["nbytes"])
-        a = np.frombuffer(official, np.uint8); b = np.frombuffer(mine_bytes[name], np.uint8)
-        same = (a == b).mean()
-        print(f"  check {name}: {100 * same:.3f}% identical")
-        if same < 0.99:
+        # Compare values, not bytes: the official converter rounds the last digit slightly differently,
+        # which doesn't matter. A layout mistake would make the values unrelated, which this catches.
+        if rec["dtype"] == "uint32":
+            a = np.frombuffer(official, np.uint32); b = np.frombuffer(mine_bytes[name], np.uint32)
+            na = np.stack([(a >> np.uint32(4 * j)) & 15 for j in range(8)]).astype(int)
+            nb = np.stack([(b >> np.uint32(4 * j)) & 15 for j in range(8)]).astype(int)
+            same = (na == nb).mean(); close = (np.abs(na - nb) <= 1).mean()
+            ok = same > 0.95 and close > 0.999
+            print(f"  check {name}: {100 * same:.2f}% the same, {100 * close:.3f}% within one step")
+        else:
+            def vals(buf):
+                if rec["dtype"] == "float32" and rec.get("format") == "f32-to-bf16":
+                    return (np.frombuffer(buf, np.uint16).astype(np.uint32) << 16).view(np.float32)
+                return np.frombuffer(buf, rec["dtype"]).astype(np.float32)
+            a, b = vals(official), vals(mine_bytes[name])
+            rel = np.abs(a - b) / np.maximum(np.abs(a), 1e-6)
+            ok = np.quantile(rel, 0.999) < 0.02
+            print(f"  check {name}: values differ by {100 * rel.mean():.4f}% on average")
+        if not ok:
             raise SystemExit("The packing doesn't match the official copy. Copy the text above to Claude.")
 
     # 2. Pack your model in the same layout.
