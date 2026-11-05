@@ -989,7 +989,7 @@ progress[hidden] { display: none; }
     ].filter(Boolean).join("\n");
   }
   // ---------- the on-device model, behind the same call shape the page already uses ----------
-  let llmQueue = Promise.resolve();
+  let llmQueue = Promise.resolve(), restartNeeded = false;
   // The AI library sometimes breaks mid-answer when the JSON rules are on ("Grammar matcher rejected the newly
   // sampled token", then "deleted object" / "Model not loaded" for every later call). When that happens: restart
   // the model from storage and redo the call once; JSON calls are redone without the rules and read leniently.
@@ -999,16 +999,20 @@ progress[hidden] { display: none; }
   async function restartEngine() {
     const m = MODELS.find((x) => x.key === prefs.model) || chosenModel();
     aiStatus("The AI hit a glitch. Restarting it...");
-    try { await Promise.race([engine.reload(modelId(m)), new Promise((_, rej) => setTimeout(() => rej(new Error("reload timed out")), 120000))]); }
-    catch (e) { console.warn("reload failed, starting fresh:", e); engine = null; sample = null; await loadModel(); if (!engine) throw { code: "no_model" }; }
+    // Start over with a new worker: after a GPU reset the old one can never work again ("device removed").
+    engine = null; sample = null;
+    await loadModel({ restart: true });
+    if (!engine) throw { code: "no_model" };
     aiStatus("Ready. " + m.name.split(":")[0] + " model is running on this device, with no internet needed.", "ok");
   }
   function runLLM(messages, opts) {
     opts = opts || {};
     const job = llmQueue.then(async () => {
+      if (restartNeeded && !opts.optional) { restartNeeded = false; await restartEngine(); }
       try { return await runLLMNow(messages, opts); }
       catch (e) {
         if (!isEngineBreak(e) || (opts.signal && opts.signal.aborted)) throw e;
+        if (opts.optional) { restartNeeded = true; throw e; }   // an optional step just gets skipped; the next real call restarts the model
         console.warn("AI engine broke; restarting:", e.message);
         await restartEngine();
         if (!opts.schema) return await runLLMNow(messages, opts);
@@ -1022,6 +1026,9 @@ progress[hidden] { display: none; }
   }
   // JSON schema -> a strict, single-line grammar. The library's own JSON mode allows unlimited blank space
   // between fields, and the small model sometimes gets stuck printing blank space until it runs out of room.
+  // Off: on 0.2.86 the strict grammar mode breaks the engine ("Cannot pass deleted object as a pointer of type
+  // GrammarMatcher"), after which even a restart can fail. JSON is asked for in plain words and read leniently instead.
+  const USE_GRAMMAR = false;
   const grammarCache = new Map();
   function schemaGrammar(schema) {
     if (grammarCache.has(schema)) return grammarCache.get(schema);
@@ -1054,7 +1061,7 @@ progress[hidden] { display: none; }
     grammarCache.set(schema, g);
     return g;
   }
-  async function runLLMNow(messages, { onText, signal, maxTokens = 800, temperature = 0.8, schema } = {}) {
+  async function runLLMNow(messages, { onText, signal, maxTokens = 800, temperature = 0.8, schema, firstMs = 180000, idleMs = 60000 } = {}) {
     if (!engine) throw { code: "no_model" };
     if (signal && signal.aborted) throw { code: "cancelled" };
     const stop = () => { try { engine.interruptGenerate(); } catch (e) { /* already stopped */ } };
@@ -1066,12 +1073,12 @@ progress[hidden] { display: none; }
     let lastAt = Date.now(), started = false, stallReject = null;
     const stalled = new Promise((_, rej) => { stallReject = rej; });
     const watchdog = setInterval(() => {
-      if (Date.now() - lastAt > (started ? 60000 : 180000)) { stop(); stallReject({ code: "upstream_error", message: "stalled: the AI stopped responding", text }); }
-    }, 5000);
+      if (Date.now() - lastAt > (started ? idleMs : firstMs)) { stop(); stallReject({ code: "upstream_error", message: "stalled: the AI stopped responding", text }); }
+    }, 2000);
     try {
       const req = { messages, stream: true, max_tokens: maxTokens, temperature, top_p: 0.95 };
-      if (schema) req.response_format = schema.properties ? { type: "grammar", grammar: schemaGrammar(schema) } : { type: "json_object" };
-      else { req.frequency_penalty = 0.4; req.presence_penalty = 0.3; }
+      if (schema && schema.properties && USE_GRAMMAR) req.response_format = { type: "grammar", grammar: schemaGrammar(schema) };
+      else if (!schema) { req.frequency_penalty = 0.4; req.presence_penalty = 0.3; }   // no penalties for JSON: keys and quotes must repeat
       const consume = (async () => {
         const stream = await engine.chat.completions.create(req);
         for await (const chunk of stream) {
@@ -1104,15 +1111,43 @@ progress[hidden] { display: none; }
     if (v && typeof v === "object") { const o = {}; Object.keys(v).forEach((k) => { o[k] = cleanStrings(v[k]); }); return o; }
     return v;
   }
+  // A blank example of the JSON shape, shown to the model in place of the library's strict JSON mode.
+  function schemaSkeleton(s) {
+    if (s.enum) return s.enum.length === 1 ? s.enum[0] : s.enum.join(" or ");
+    if (s.type === "string") return "";
+    if (s.type === "number" || s.type === "integer") return 0;
+    if (s.type === "boolean") return false;
+    if (s.type === "array") return [schemaSkeleton(s.items || { type: "string" })];
+    const o = {}; Object.keys(s.properties || {}).forEach((k) => { o[k] = schemaSkeleton(s.properties[k]); }); return o;
+  }
+  // Enum fields: pick out an allowed word ("Accepted." -> accepted); a locked single choice is forced. Anything
+  // else is left for the usual clean-up (normSex reads "woman", the verdict check drops nonsense).
+  function fixEnums(v, s) {
+    if (!s || v == null) return v;
+    if (s.enum) {
+      if (s.enum.length === 1) return s.enum[0];
+      if (typeof v !== "string" || s.enum.includes(v)) return v;
+      const hit = s.enum.find((e) => new RegExp("\\b" + e + "\\b", "i").test(v));
+      return hit || v;
+    }
+    if (s.type === "array" && Array.isArray(v)) return v.map((x) => fixEnums(x, s.items));
+    if (s.properties && typeof v === "object" && !Array.isArray(v)) Object.keys(s.properties).forEach((k) => { if (k in v) v[k] = fixEnums(v[k], s.properties[k]); });
+    return v;
+  }
   function makeSample() {
     const s = (input, opts) => runLLM(typeof input === "string" ? [{ role: "user", content: input }] : input, opts);
     s.json = async (input, opts) => {
       const o = Object.assign({ temperature: 0.4 }, opts || {});
       o.schema = o.schema || { type: "object" };
-      const { text } = await s(input, o);
+      let msgs = typeof input === "string" ? [{ role: "user", content: input }] : input.slice();
+      if (!USE_GRAMMAR && o.schema.properties) {
+        const last = msgs[msgs.length - 1];
+        msgs[msgs.length - 1] = Object.assign({}, last, { content: last.content + "\n\nReply with only one JSON object, on one line, in exactly this shape (fill in the values; where it says \"a or b\", pick one): " + JSON.stringify(schemaSkeleton(o.schema)) });
+      }
+      const { text } = await s(msgs, o);
       const v = parseNotes(text);
       if (!v) throw { code: "invalid_json", text };
-      return cleanStrings(v);
+      return cleanStrings(fixEnums(v, o.schema));
     };
     return s;
   }
@@ -1132,7 +1167,10 @@ progress[hidden] { display: none; }
       if (direction) live.append(directionEl({ direction }));
       const thinking = document.createElement("p");
       thinking.className = "thinking";
-      thinking.textContent = direction ? "Deciding what your direction makes happen..." : "Thinking about what happens next...";
+      let stage = direction ? "Deciding what your direction makes happen..." : "Thinking about what happens next...";
+      const t0 = Date.now(), showStage = () => { thinking.textContent = stage + " " + Math.round((Date.now() - t0) / 1000) + "s"; };
+      showStage();
+      const tick = setInterval(showStage, 1000);
       live.append(thinking);
       $("storyView").hidden = false;
       $("storyView").append(live);
@@ -1143,7 +1181,7 @@ progress[hidden] { display: none; }
         if (direction && story.turns.length) {
           $("contHint").textContent = "Applying your direction...";
           try {
-            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 320, temperature: 0.3 });
+            plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 320, temperature: 0.3, optional: true, firstMs: 60000, idleMs: 20000 });
             if (!plan || typeof plan.happens !== "string" || !plan.happens.trim()) plan = null;
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
@@ -1169,17 +1207,17 @@ progress[hidden] { display: none; }
           if (plan.opening && /\bI\b|\bmy\b/.test(plan.opening) && mainChar()) plan.opening = "";   // the reader's "I" leaked in: skip it
           const pending = { direction, verdict: plan.verdict, note: plan.reason };
           live.firstChild.replaceWith(directionEl(pending));
-          thinking.textContent = "Writing...";
+          stage = "Writing...";
         } else if (!direction && story.turns.length) {
           // 1b. no direction: plan one concrete new event so the story can't stall
           $("contHint").textContent = "Deciding what happens next...";
           try {
-            const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 260, temperature: 0.9 });
+            const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 260, temperature: 0.9, optional: true, firstMs: 45000, idleMs: 20000 });
             if (nx && typeof nx.next === "string" && nx.next.trim()) plan = { next: nx.next.trim(), opening: cleanOpening(nx.opening) };
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
           }
-          thinking.textContent = "Writing...";
+          stage = "Writing...";
         }
         // 2. write the part
         $("contHint").textContent = "Writing...";
@@ -1218,7 +1256,7 @@ progress[hidden] { display: none; }
           again.check = tidy(again);
           if (again.check.paragraphs.length >= res.check.paragraphs.length) res = again;
         }
-      } finally { live.remove(); }
+      } finally { clearInterval(tick); live.remove(); }
       const paragraphs = res.check.paragraphs;
       if (!paragraphs.length) throw { code: "empty_completion" };
       const turn = { direction: direction || "", paragraphs,
@@ -1250,7 +1288,7 @@ progress[hidden] { display: none; }
     notesBusy = true;
     if (!busy) $("contHint").textContent = hintText();
     try {
-      const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1400, temperature: 0.3 });
+      const meta = await sample.json(notesPrompt(turn.direction, turn.paragraphs.join("\n\n")), { schema: NOTES_SCHEMA, maxTokens: 1400, temperature: 0.3, optional: true, firstMs: 90000, idleMs: 20000 });
       if (!story.turns.includes(turn)) return;   // the part was undone meanwhile
       const blankish = (v) => { v = String(v || "").trim(); return /^(empty|none|n\/a|unknown|nothing|nobody|no one|not mentioned|not stated|-)\b/i.test(v) ? "" : v; };
       if (typeof meta.beat === "string" && meta.beat.trim()) turn.beat = meta.beat.trim().slice(0, 200);
@@ -2323,7 +2361,7 @@ progress[hidden] { display: none; }
       size: "About a 1.8 GB download.", fit: "Best on a PC. Too big for most phones: the page may close while it loads." }
   ];
   const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  let webllm = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
+  let webllm = null, llmWorker = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
   // If a model is too big, the browser kills the whole page while loading it (iPhone Safari: "A problem repeatedly occurred").
   // A marker is written before loading and cleared after; finding it at startup means the last load crashed the page.
   const LOADING_KEY = "storyai.loadingModel", TOO_BIG_KEY = "storyai.tooBig";
@@ -2377,11 +2415,17 @@ progress[hidden] { display: none; }
     if (!navigator.onLine || /fetch|network|Failed to load|NetworkError/i.test(msg)) return "This model isn't downloaded yet, and there's no internet. Connect to wifi once to download it.";
     return "Couldn't start the AI: " + msg.slice(0, 160);
   }
-  async function loadModel() {
+  async function loadModel(opts) {
     if (loadingModel) return;
+    const restart = !!(opts && opts.restart === true);
+    if (restart) { const used = MODELS.find((x) => x.key === prefs.model); if (used) $("modelSel").value = used.key; }
     const m = chosenModel();
+    // Starting a model that is already running would shut down the copy in use mid-story (seen in testing:
+    // the auto-start and a Start press both landed, and the next call failed with "already been disposed").
+    if (!restart && engine && prefs.model === m.key) { renderModelInfo(); return; }
     if (!(await checkGPU())) { aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
-    if (tooBig().includes(m.key)) {
+    if (restart) { /* restarting the model already in use: no questions */ }
+    else if (tooBig().includes(m.key)) {
       if (!(await confirmBox("Last time, " + m.name.split(": ")[1] + " needed more memory than this device has, and the page closed. Try again anyway?"))) return;
     } else if (isPhone && m.key === "large") {
       if (!(await confirmBox("Hermes 3 usually needs more memory than a phone browser allows. The page may close while it loads. Try anyway?"))) return;
@@ -2395,6 +2439,7 @@ progress[hidden] { display: none; }
     try {
       const lib = await loadLib();
       if (engine) { try { await engine.unload(); } catch (e) { /* already gone */ } engine = null; sample = null; }
+      if (llmWorker) { try { llmWorker.terminate(); } catch (e) { /* already gone */ } llmWorker = null; }   // a fresh worker gets a fresh GPU device
       const id = modelId(m);
       const cfg = { initProgressCallback: (p) => {
         $("loadProg").value = p.progress || 0;
@@ -2403,6 +2448,7 @@ progress[hidden] { display: none; }
       } };
       try {
         const worker = new Worker(new URL("llm-worker.js", location.href), { type: "module" });
+        llmWorker = worker;
         engine = await lib.CreateWebWorkerMLCEngine(worker, id, cfg);
       } catch (err) {
         if (!/WebGPU is not supported|Worker|module/i.test(String(err && err.message))) throw err;
