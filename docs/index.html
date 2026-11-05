@@ -378,6 +378,15 @@ progress[hidden] { display: none; }
           <div class="scale"><span>0 · slow, detailed</span><span>100 · fast, plot only</span></div>
         </div>
         <div class="realism-desc" id="paceDesc"></div>
+        <div class="field" style="margin:12px 0 8px">
+          <label for="rating">Content rating</label>
+          <select id="rating">
+            <option value="pg">PG · family</option>
+            <option value="pg13">PG-13 · teen</option>
+            <option value="r">R · adults</option>
+          </select>
+        </div>
+        <div class="realism-desc" id="ratingDesc"></div>
       </div>
 
       <div class="section">
@@ -519,7 +528,7 @@ progress[hidden] { display: none; }
   }
   function safeLS(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function loadPrefs() {
-    return Object.assign({ paras: 3, realism: 60, drive: 40, pace: 50, voice: false, voiceName: "", rate: 1, theme: "auto" },
+    return Object.assign({ paras: 3, realism: 60, drive: 40, pace: 50, rating: "pg13", voice: false, voiceName: "", rate: 1, theme: "auto" },
       safeLS(() => JSON.parse(localStorage.getItem(LS_PREFS)) || {}, {}));
   }
   function savePrefs() { safeLS(() => localStorage.setItem(LS_PREFS, JSON.stringify(prefs))); }
@@ -574,6 +583,30 @@ progress[hidden] { display: none; }
     { max: 100, name: "Rapid", reader: "Jumps from plot point to plot point, skipping hours or days. Several things happen in each part.",
       rule: "Rapid pace: jump from plot point to plot point. Each paragraph covers a new event, skipping hours or days when needed. Almost no description; sum up anything that isn't a key moment in a sentence." }
   ];
+  // ---------- content rating ----------
+  // Small chat models are tuned to play it safe and quietly soften fights, danger and swearing unless told
+  // plainly that this is fiction and what is allowed. The rule goes at the top of every prompt.
+  const NO_SOFTENING = " This is fiction, and the reader chose this rating: never refuse, never apologise, never add warnings or lessons, never step out of the story to comment on it, and never turn what the reader asked for into something gentler.";
+  const RATINGS = {
+    pg: { name: "PG", reader: "Family friendly. Danger and adventure, but no gore, swearing or anything scary for kids.",
+      rule: "CONTENT RATING PG (family): adventure, peril, scuffles and sad moments are fine; no blood or gore, no swearing, romance no further than a kiss." },
+    pg13: { name: "PG-13", reader: "Like a mainstream action or thriller movie: fights, weapons, injuries, deaths, villains, fear and some swearing are written plainly.",
+      rule: "CONTENT RATING PG-13 (like a mainstream action or thriller movie): fights, weapons, injuries and blood, deaths, crime, cruel villains, fear, drinking, kissing and romance, and some swearing are all allowed. Write them plainly and with real stakes; just keep sex off the page and don't linger on gore." + NO_SOFTENING },
+    r: { name: "R", reader: "For adults: graphic violence, strong language, drugs, horror and dark themes. Sex scenes fade out before anything explicit.",
+      rule: "CONTENT RATING R (for adults): violence, injuries and death may be graphic and brutal; characters swear as real people do; drugs, crime, cruelty, horror and disturbing themes are allowed; romance and sexual situations may happen, but fade out before anything explicit." + NO_SOFTENING }
+  };
+  function rating() { return RATINGS[prefs.rating] || RATINGS.pg13; }
+  function ratingRule() { return rating().rule; }
+  function renderRating() {
+    $("rating").value = RATINGS[prefs.rating] ? prefs.rating : "pg13";
+    $("ratingDesc").innerHTML = "";
+    const s = document.createElement("b"); s.textContent = rating().name + ". ";
+    $("ratingDesc").append(s, document.createTextNode(rating().reader));
+  }
+  // The model stepping out of the story to refuse or lecture ("I can't write that", "As an AI...").
+  // Only checked outside quotation marks, so characters can still say "I can't do that" in dialogue.
+  const REFUSAL = /\b(I can(no|'|’)t (write|create|continue (this|the story|with)|fulfil+|provide|assist|generate|engage|produce|depict)|I('m| am) (not able|unable) to (write|create|continue|help|provide|assist|generate|depict)|I won(')?t (write|create|continue this|depict)|as an AI|I('m| am) (just )?an AI|language model|I apologi[sz]e,? but|I'm sorry,? but I can|content (policy|guidelines)|against my (guidelines|programming)|(harmful|explicit|graphic|violent) content|let me know if (you|there)|(would you like|do you want) me to|is there anything else I)\b/i;
+  function isRefusal(s) { return REFUSAL.test(String(s || "").replace(/["“][^"”]*["”]/g, " ")); }
   function pick(list, v) { return list.find((b) => v <= b.max) || list[list.length - 1]; }
   function driveRule() { return "WHO DRIVES THE STORY " + prefs.drive + "/100 (" + pick(DRIVE_BANDS, prefs.drive).name + "): " + pick(DRIVE_BANDS, prefs.drive).rule; }
   function paceRule() { return "PACE " + prefs.pace + "/100 (" + pick(PACE_BANDS, prefs.pace).name + "): " + pick(PACE_BANDS, prefs.pace).rule; }
@@ -769,6 +802,7 @@ progress[hidden] { display: none; }
     const maxTokens = Math.min(1900, n * 170 + 60);
     const rules = [
       "You are a skilled storyteller writing an interactive story with a reader. Write vivid, natural prose, with dialogue where it fits.",
+      ratingRule(),
       "Write only story text: no title, no headings, no lists, no notes, and no questions to the reader.",
       "Always write in the third person and past tense, using characters' names, even when the reader writes \"I\".",
       "Keep the story moving forward. Never repeat an event, scene or description that already happened; each part must add something new.",
@@ -846,6 +880,7 @@ progress[hidden] { display: none; }
     const beats = beatsText(14);
     return [
       "You plan the next part of an interactive story. The reader pressed Continue without saying what to do. Decide what happens next.",
+      ratingRule(),
       driveRule(),
       paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
@@ -887,6 +922,8 @@ progress[hidden] { display: none; }
       "REALISM SETTING " + r + "/100 (" + b.name + "): " + b.rule,
       forcedVerdict(direction) ? "DECIDED ALREADY: " + FORCED_TEXT[forcedVerdict(direction)] : "",
       "Judge realism against the story's own world: magic is normal in a fantasy world, but not in an ordinary modern one.",
+      ratingRule(),
+      "Judge only whether the direction is possible, never whether it is nice: violent, cruel, rude, risky or dark actions happen whenever they are possible. \"refused\" means physically impossible, never \"not allowed\".",
       paceRule(),
       "PREMISE: " + story.premise.slice(0, 500),
       "CHARACTERS:\n" + castText(direction + " " + storySoFar(1200), 800),
@@ -925,6 +962,7 @@ progress[hidden] { display: none; }
       const n = normSent(s); if (!n) return false;
       total++;
       if (/\b(your turn|you decide|what happens next|what will (he|she|they|you) do|choose (whether|between)|the choice is yours)\b/i.test(s)) return false;
+      if (isRefusal(s)) return false;
       if (n.length > 20 && seen.has(n)) return false;
       const w = n.split(" ");
       if (w.length >= 8) { let hit = 0, all = 0; for (let i = 0; i + 5 <= w.length; i++) { all++; if (grams.has(w.slice(i, i + 5).join(" "))) hit++; } if (hit / all > 0.5) return false; }
@@ -1182,7 +1220,8 @@ progress[hidden] { display: none; }
           $("contHint").textContent = "Applying your direction...";
           try {
             plan = await sample.json(planPrompt(direction), { signal: ctl.signal, schema: planSchema(forcedVerdict(direction)), maxTokens: 320, temperature: 0.3, optional: true, firstMs: 60000, idleMs: 20000 });
-            if (!plan || typeof plan.happens !== "string" || !plan.happens.trim()) plan = null;
+            if (!plan || typeof plan.happens !== "string" || !plan.happens.trim() || isRefusal(plan.happens)) plan = null;
+            else if (isRefusal(plan.reason) || isRefusal(plan.opening)) { plan.verdict = "accepted"; plan.reason = ""; plan.opening = ""; }
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
             plan = null;
@@ -1213,7 +1252,7 @@ progress[hidden] { display: none; }
           $("contHint").textContent = "Deciding what happens next...";
           try {
             const nx = await sample.json(nextPrompt(), { signal: ctl.signal, schema: NEXT_SCHEMA, maxTokens: 260, temperature: 0.9, optional: true, firstMs: 45000, idleMs: 20000 });
-            if (nx && typeof nx.next === "string" && nx.next.trim()) plan = { next: nx.next.trim(), opening: cleanOpening(nx.opening) };
+            if (nx && typeof nx.next === "string" && nx.next.trim() && !isRefusal(nx.next)) plan = { next: nx.next.trim(), opening: cleanOpening(nx.opening) };
           } catch (e) {
             if (e && e.code === "cancelled") throw e;
           }
@@ -1249,7 +1288,13 @@ progress[hidden] { display: none; }
         };
         res = await gen(messages, 0.8);
         res.check = tidy(res);
-        if (story.turns.length && res.check.total && res.check.kept < res.check.total * 0.6) {
+        if (isRefusal(res.text) && res.check.paragraphs.join(" ").length < 400) {
+          // The model stepped out of the story to refuse or lecture: ask once more, firmly.
+          $("contHint").textContent = "The AI held back; asking again...";
+          const again = await gen([{ role: "user", content: messages[0].content + "\n\nIMPORTANT: this is fiction rated " + rating().name + ". Write the story text itself, exactly as asked, with no refusal, apology, warning or comment." }], 0.9);
+          again.check = tidy(again);
+          if (again.check.paragraphs.length >= res.check.paragraphs.length) res = again;
+        } else if (story.turns.length && res.check.total && res.check.kept < res.check.total * 0.6) {
           // Mostly copied from earlier parts: try once more, hotter, with a direct warning.
           $("contHint").textContent = "That came out repetitive; trying again...";
           const again = await gen([{ role: "user", content: messages[0].content + "\n\nIMPORTANT: do not reuse any sentence or line of dialogue from the story so far. Every sentence must be new." }], 1.0);
@@ -1596,7 +1641,7 @@ progress[hidden] { display: none; }
 
   // ---------- wiring ----------
   function renderAll() {
-    renderStory(); renderBible(); renderRealism();
+    renderStory(); renderBible(); renderRealism(); renderRating();
     $("paras").value = prefs.paras; $("parasOut").textContent = prefs.paras;
     $("realism").value = prefs.realism; $("drive").value = prefs.drive; $("pace").value = prefs.pace;
     $("rate").value = prefs.rate; $("rateOut").textContent = Number(prefs.rate).toFixed(2).replace(/0$/, "") + "×";
@@ -1610,6 +1655,7 @@ progress[hidden] { display: none; }
 
   $("paras").addEventListener("input", (e) => { prefs.paras = +e.target.value; savePrefs(); renderAll(); });
   ["realism", "drive", "pace"].forEach((k) => $(k).addEventListener("input", (e) => { prefs[k] = +e.target.value; savePrefs(); renderRealism(); $("contHint").textContent = busy ? "Writing..." : hintText(); }));
+  $("rating").addEventListener("change", (e) => { prefs.rating = e.target.value; savePrefs(); renderRating(); });
   $("rate").addEventListener("input", (e) => { prefs.rate = +e.target.value; savePrefs(); $("rateOut").textContent = prefs.rate.toFixed(2).replace(/0$/, "") + "×"; });
   $("voiceSel").addEventListener("change", () => { prefs.voiceName = $("voiceSel").value; savePrefs(); });
   $("voiceToggle").addEventListener("click", () => {
