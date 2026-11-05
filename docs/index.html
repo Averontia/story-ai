@@ -248,7 +248,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 /* Offline AI panel */
 progress { width: 100%; height: 8px; accent-color: var(--accent); margin-top: 10px; }
 progress[hidden] { display: none; }
-.ai-status { font-size: 13px; margin-top: 8px; color: var(--muted); }
+.ai-status { font-size: 13px; margin-top: 8px; color: var(--muted); white-space: pre-line; }
 .ai-status.ok { color: var(--accent); font-weight: 600; }
 .ai-status.bad { color: var(--warn); }
 #aiSection { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
@@ -2400,14 +2400,33 @@ progress[hidden] { display: none; }
   const WEBLLM_URL = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/lib/index.js";
   const MODELS = [
     { key: "small", name: "Quick: Llama 3.2 1B", f16: "Llama-3.2-1B-Instruct-q4f16_1-MLC", f32: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
-      size: "About a 0.7 GB download.", fit: "Works on most recent iPhones. Simplest writing." },
+      size: "About a 0.7 GB download.", fit: "Works on most recent iPhones. Simplest writing.", pcFit: "Runs on almost any computer. Simplest writing." },
     { key: "medium", name: "Better: Gemma 2 2B", f16: "gemma-2-2b-it-q4f16_1-MLC", f32: "gemma-2-2b-it-q4f32_1-MLC",
-      size: "About a 1.5 GB download.", fit: "Needs an iPhone 15 Pro or newer, or a PC." },
+      size: "About a 1.5 GB download.", fit: "Needs an iPhone 15 Pro or newer, or a PC.", pcFit: "Good on most computers." },
     { key: "large", name: "Best: Hermes 3 (3B)", f16: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", f32: "Hermes-3-Llama-3.2-3B-q4f32_1-MLC",
-      size: "About a 1.8 GB download.", fit: "Best on a PC. Too big for most phones: the page may close while it loads." }
+      size: "About a 1.8 GB download.", fit: "Best on a PC. Too big for most phones: the page may close while it loads.", pcFit: "Best writing. Needs a computer with 8 GB of memory or more." }
   ];
   const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const GPU_LOCKED = "The graphics chip stopped responding, so the browser has switched off the offline AI for now. Fully close the browser (every window) and open it again. If it keeps happening, plug in the charger and close other heavy apps or tabs.";
+  const UA = navigator.userAgent;
+  const browserName = /Edg\//.test(UA) ? "Edge" : /OPR\//.test(UA) ? "Opera" : /Firefox\//.test(UA) ? "Firefox" : /Chrome\//.test(UA) ? "Chrome" : /Safari\//.test(UA) ? "Safari" : "this browser";
+  const chromeVer = +((UA.match(/Chrome\/(\d+)/) || [])[1] || 0);
+  // On a computer, say exactly what is wrong and how to fix it, instead of the iPhone advice.
+  function pcGpuHelp(why) {
+    if (browserName === "Firefox") return "Firefox can't run the offline AI on this computer yet. Open this page in Chrome or Edge instead.";
+    if (browserName === "Safari") return "This version of Safari can't run the offline AI. Update macOS, or open this page in Chrome.";
+    if (/Linux/.test(UA) && !/CrOS/.test(UA)) return "Chrome on Linux keeps the offline AI's graphics access (WebGPU) switched off. Open chrome://flags, turn on \"Unsafe WebGPU Support\", and relaunch Chrome.";
+    if (chromeVer && chromeVer < 113) return browserName + " is too old to run the offline AI (version " + chromeVer + "). Update it: open the ⋮ menu, then Help, then About " + browserName + ".";
+    const settings = browserName === "Edge" ? "edge://settings/system" : "chrome://settings/system";
+    const gpu = browserName === "Edge" ? "edge://gpu" : "chrome://gpu";
+    return (why === "frozen"
+      ? "The graphics chip stopped responding earlier, and " + browserName + " has switched off the offline AI's access to it."
+      : browserName + " isn't letting this page use the graphics chip (WebGPU), which the offline AI needs.") +
+      "\nTo fix it:" +
+      "\n1. Type " + settings + " in the address bar. Turn on \"Use graphics acceleration when available\" and press Relaunch." +
+      "\n2. Type " + gpu + " in the address bar and find the line that starts with \"WebGPU\". If it doesn't say \"Hardware accelerated\", update the graphics driver (Windows Update, then Optional updates, or the maker's site: Intel, AMD or NVIDIA)." +
+      "\n3. Still stuck? Try " + (browserName === "Edge" ? "Chrome" : "Edge") + ", which is already on Windows.";
+  }
+  const GPU_LOCKED = pcGpuHelp("frozen");
   let gpuLocked = false;
   let webllm = null, llmWorker = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
   // If a model is too big, the browser kills the whole page while loading it (iPhone Safari: "A problem repeatedly occurred").
@@ -2438,6 +2457,11 @@ progress[hidden] { display: none; }
       return (gpuOk = true);
     } catch (e) { return (gpuOk = false); }
   }
+  function cantRunText() {
+    if (gpuLocked) return GPU_LOCKED;
+    if (!isPhone) return pcGpuHelp(navigator.gpu ? "frozen" : "off");
+    return "This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On Android, use Chrome.";
+  }
   async function loadLib() {
     if (!webllm) webllm = await import(WEBLLM_URL);
     return webllm;
@@ -2452,7 +2476,7 @@ progress[hidden] { display: none; }
     const m = chosenModel();
     let cached = false;
     try { if (gpuOk) cached = await (await loadLib()).hasModelInCache(modelId(m)); } catch (e) { /* offline before the library was saved */ }
-    $("modelInfo").textContent = m.fit + " " + (cached ? "Already downloaded." : m.size);
+    $("modelInfo").textContent = (isPhone ? m.fit : m.pcFit) + " " + (cached ? "Already downloaded." : m.size);
     $("loadBtn").textContent = engine && prefs.model === m.key ? "Running" : cached ? "Start" : "Download and start";
     $("loadBtn").disabled = loadingModel || !gpuOk || (engine && prefs.model === m.key);
     $("deleteModelBtn").hidden = !cached;
@@ -2473,7 +2497,7 @@ progress[hidden] { display: none; }
     // Starting a model that is already running would shut down the copy in use mid-story (seen in testing:
     // the auto-start and a Start press both landed, and the next call failed with "already been disposed").
     if (!restart && engine && prefs.model === m.key) { renderModelInfo(); return; }
-    if (!(await checkGPU())) { aiStatus(gpuLocked ? GPU_LOCKED : "This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
+    if (!(await checkGPU())) { aiStatus(cantRunText(), "bad"); return; }
     if (restart) { /* restarting the model already in use: no questions */ }
     else if (tooBig().includes(m.key)) {
       if (!(await confirmBox("Last time, " + m.name.split(": ")[1] + " needed more memory than this device has, and the page closed. Try again anyway?"))) return;
@@ -2548,15 +2572,17 @@ progress[hidden] { display: none; }
 
   (async () => {
     if (!(await checkGPU())) {
-      aiStatus(gpuLocked ? GPU_LOCKED : "This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad");
-      showBanner(gpuLocked ? "The offline AI is switched off until the browser restarts." : "This browser can't run the offline AI.");
+      aiStatus(cantRunText(), "bad");
+      showBanner(isPhone ? "This browser can't run the offline AI." : browserName + " has the offline AI's graphics access switched off. Open Settings, then Offline AI, for how to fix it.");
       $("loadBtn").disabled = true;
       return;
     }
     const cached = await renderModelInfo();
     if (crashedKey) {
       const big = MODELS.find((m) => m.key === crashedKey);
-      aiStatus("The page closed while starting " + (big ? big.name.split(": ")[1] : "the AI") + ". That usually means this device doesn't have enough memory for it. I've picked a smaller model; press " + $("loadBtn").textContent + ".", "bad");
+      aiStatus("The page closed while starting " + (big ? big.name.split(": ")[1] : "the AI") + ". " +
+        (isPhone ? "That usually means this device doesn't have enough memory for it." : "On a computer that usually means the graphics chip froze or ran out of memory. Close other heavy tabs and apps, and plug in the charger.") +
+        " I've picked a smaller model; press " + $("loadBtn").textContent + ".", "bad");
     } else if (prefs.model && cached && !tooBig().includes(prefs.model)) loadModel();   // start the model you used last time
     else aiStatus("Not downloaded yet. Connect to wifi, then press Download and start.");
   })();
