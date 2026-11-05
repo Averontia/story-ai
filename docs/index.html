@@ -2401,6 +2401,11 @@ progress[hidden] { display: none; }
   const MODELS = [
     { key: "small", name: "Quick: Llama 3.2 1B", f16: "Llama-3.2-1B-Instruct-q4f16_1-MLC", f32: "Llama-3.2-1B-Instruct-q4f32_1-MLC",
       size: "About a 0.7 GB download.", fit: "Works on most recent iPhones. Simplest writing.", pcFit: "Runs on almost any computer. Simplest writing." },
+    // Your own copy of Llama 1B with its habit of holding back on dark fiction removed (made with tools/make_storyai_model.ipynb).
+    // Same design as Llama 1B, so it runs on the official one's program (base) with only the numbers swapped.
+    { key: "unfiltered", name: "Unfiltered: Your Story AI 1B", f16: "Llama-3.2-1B-StoryAI-q4f16_1-MLC", f32: "Llama-3.2-1B-StoryAI-q4f32_1-MLC",
+      custom: { repo: "https://huggingface.co/Averontia/", base: "Llama-3.2-1B-Instruct-" },
+      size: "About a 0.7 GB download.", fit: "Llama 1B without the holding back on dark scenes. Works on most recent iPhones.", pcFit: "Llama 1B without the holding back on dark scenes. Runs on almost any computer." },
     { key: "medium", name: "Better: Gemma 2 2B", f16: "gemma-2-2b-it-q4f16_1-MLC", f32: "gemma-2-2b-it-q4f32_1-MLC",
       size: "About a 1.5 GB download.", fit: "Needs an iPhone 15 Pro or newer, or a PC.", pcFit: "Good on most computers." },
     { key: "large", name: "Best: Hermes 3 (3B)", f16: "Hermes-3-Llama-3.2-3B-q4f16_1-MLC", f32: "Hermes-3-Llama-3.2-3B-q4f32_1-MLC",
@@ -2441,6 +2446,15 @@ progress[hidden] { display: none; }
 
   function chosenModel() { return MODELS.find((m) => m.key === $("modelSel").value) || MODELS[0]; }
   function modelId(m) { return hasF16 ? m.f16 : m.f32; }
+  // The library only knows its own models; your own ones are added to its list, borrowing the matching official program.
+  function appConfig(lib) {
+    const list = lib.prebuiltAppConfig.model_list.slice();
+    for (const m of MODELS) if (m.custom) for (const id of [m.f16, m.f32]) {
+      const q = id.match(/q4f(16|32)_1/)[0], base = list.find((x) => x.model_id === m.custom.base + q + "-MLC");
+      if (base) list.push({ ...base, model_id: id, model: m.custom.repo + id });
+    }
+    return { ...lib.prebuiltAppConfig, model_list: list };
+  }
   function aiStatus(text, kind) { const s = $("aiStatus"); s.textContent = text; s.className = "ai-status" + (kind ? " " + kind : ""); }
   function showBanner(text) {
     $("noClaudeText").textContent = text;
@@ -2475,7 +2489,7 @@ progress[hidden] { display: none; }
   async function renderModelInfo() {
     const m = chosenModel();
     let cached = false;
-    try { if (gpuOk) cached = await (await loadLib()).hasModelInCache(modelId(m)); } catch (e) { /* offline before the library was saved */ }
+    try { if (gpuOk) { const lib = await loadLib(); cached = await lib.hasModelInCache(modelId(m), appConfig(lib)); } } catch (e) { /* offline before the library was saved */ }
     $("modelInfo").textContent = (isPhone ? m.fit : m.pcFit) + " " + (cached ? "Already downloaded." : m.size);
     $("loadBtn").textContent = engine && prefs.model === m.key ? "Running" : cached ? "Start" : "Download and start";
     $("loadBtn").disabled = loadingModel || !gpuOk || (engine && prefs.model === m.key);
@@ -2515,7 +2529,7 @@ progress[hidden] { display: none; }
       if (engine) { try { await engine.unload(); } catch (e) { /* already gone */ } engine = null; sample = null; }
       if (llmWorker) { try { llmWorker.terminate(); } catch (e) { /* already gone */ } llmWorker = null; }   // a fresh worker gets a fresh GPU device
       const id = modelId(m);
-      const cfg = { initProgressCallback: (p) => {
+      const cfg = { appConfig: appConfig(lib), initProgressCallback: (p) => {
         $("loadProg").value = p.progress || 0;
         const fetching = /Fetching|Loading model from cache|Loading GPU/i.test(p.text || "");
         aiStatus(fetching ? (p.text || "").replace(/\s*It can take a while.*$/i, "") : (p.text || "Loading..."));
@@ -2551,7 +2565,7 @@ progress[hidden] { display: none; }
     if (!(await confirmBox("Delete the downloaded " + m.name.split(": ")[1] + " model? You'd need wifi to download it again."))) return;
     try {
       if (engine && prefs.model === m.key) { try { await engine.unload(); } catch (e) { /* already gone */ } engine = null; sample = null; showBanner("The offline AI isn't running yet."); }
-      await (await loadLib()).deleteModelAllInfoInCache(modelId(m));
+      const lib = await loadLib(); await lib.deleteModelAllInfoInCache(modelId(m), appConfig(lib));
       aiStatus("Deleted." + (await storageNote()));
     } catch (e) { aiStatus("Couldn't delete it: " + String((e && e.message) || e).slice(0, 120), "bad"); }
     renderModelInfo();

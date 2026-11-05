@@ -1,6 +1,6 @@
 // Keeps Story AI's own files on the device so it opens with no internet.
 // The AI model itself is stored separately by the AI library the first time it downloads.
-const CACHE = "story-ai-v12";
+const CACHE = "story-ai-v13";
 const LIB = "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/lib/index.js";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./llm-worker.js", "./icon-180.png", "./icon-192.png", "./icon-512.png", LIB];
 
