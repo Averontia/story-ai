@@ -2361,6 +2361,8 @@ progress[hidden] { display: none; }
       size: "About a 1.8 GB download.", fit: "Best on a PC. Too big for most phones: the page may close while it loads." }
   ];
   const isPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const GPU_LOCKED = "The graphics chip stopped responding, so the browser has switched off the offline AI for now. Fully close the browser (every window) and open it again. If it keeps happening, plug in the charger and close other heavy apps or tabs.";
+  let gpuLocked = false;
   let webllm = null, llmWorker = null, engine = null, loadingModel = false, hasF16 = true, gpuOk = null;
   // If a model is too big, the browser kills the whole page while loading it (iPhone Safari: "A problem repeatedly occurred").
   // A marker is written before loading and cleared after; finding it at startup means the last load crashed the page.
@@ -2384,7 +2386,8 @@ progress[hidden] { display: none; }
     if (!navigator.gpu) return (gpuOk = false);
     try {
       const a = await navigator.gpu.requestAdapter();
-      if (!a) return (gpuOk = false);
+      // WebGPU exists but no chip is offered: on a PC that usually means it froze earlier and the browser locked it.
+      if (!a) { gpuLocked = !isPhone; return (gpuOk = false); }
       hasF16 = a.features.has("shader-f16");
       return (gpuOk = true);
     } catch (e) { return (gpuOk = false); }
@@ -2411,6 +2414,7 @@ progress[hidden] { display: none; }
   }
   function friendlyLoadError(e) {
     const msg = String((e && e.message) || e || "");
+    if (!isPhone && /compatible GPU|No available adapters|DEVICE_HUNG|DEVICE_REMOVED|Invalid ShaderModule|device (was )?lost/i.test(msg)) return GPU_LOCKED;
     if (/memory|OOM|out of|allocation|device (was )?lost|exceeds/i.test(msg)) return "This device ran out of memory for that model. Pick a smaller one.";
     if (!navigator.onLine || /fetch|network|Failed to load|NetworkError/i.test(msg)) return "This model isn't downloaded yet, and there's no internet. Connect to wifi once to download it.";
     return "Couldn't start the AI: " + msg.slice(0, 160);
@@ -2423,7 +2427,7 @@ progress[hidden] { display: none; }
     // Starting a model that is already running would shut down the copy in use mid-story (seen in testing:
     // the auto-start and a Start press both landed, and the next call failed with "already been disposed").
     if (!restart && engine && prefs.model === m.key) { renderModelInfo(); return; }
-    if (!(await checkGPU())) { aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
+    if (!(await checkGPU())) { aiStatus(gpuLocked ? GPU_LOCKED : "This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad"); return; }
     if (restart) { /* restarting the model already in use: no questions */ }
     else if (tooBig().includes(m.key)) {
       if (!(await confirmBox("Last time, " + m.name.split(": ")[1] + " needed more memory than this device has, and the page closed. Try again anyway?"))) return;
@@ -2498,8 +2502,8 @@ progress[hidden] { display: none; }
 
   (async () => {
     if (!(await checkGPU())) {
-      aiStatus("This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad");
-      showBanner("This browser can't run the offline AI.");
+      aiStatus(gpuLocked ? GPU_LOCKED : "This browser can't run the offline AI. On iPhone, update to iOS 26 or newer and use Safari. On a PC, use Chrome or Edge.", "bad");
+      showBanner(gpuLocked ? "The offline AI is switched off until the browser restarts." : "This browser can't run the offline AI.");
       $("loadBtn").disabled = true;
       return;
     }
