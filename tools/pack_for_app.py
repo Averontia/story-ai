@@ -5,6 +5,14 @@ import os, glob, json, hashlib, shutil, numpy as np, torch
 from safetensors import safe_open
 from huggingface_hub import snapshot_download
 
+# If Colab restarted, the settings from Step 1 and 3 are forgotten. Fill them back in.
+if "SIZE" not in globals(): SIZE = "1B"
+if "REPO_NAME" not in globals(): REPO_NAME = f"Llama-3.2-{SIZE}-StoryAI"
+if "BASE" not in globals(): BASE = f"unsloth/Llama-3.2-{SIZE}-Instruct"
+if not glob.glob("storyai-hf/*.safetensors"):
+    raise SystemExit("Colab reset its computer, so the model you made is gone. "
+                     "Menu: Runtime > Run all, and sign in again when the box appears.")
+
 README = f"""---
 library_name: mlc-llm
 tags: [mlc-llm, web-llm]
